@@ -1,67 +1,70 @@
 # AL Registo
 
-Frontend em React + Vite + TypeScript para registo de visitantes de Alojamento Local, usando Supabase (Postgres + Auth).
+Frontend em React + Vite + TypeScript para registo de visitantes de Alojamento Local, com Supabase (Auth + Postgres).
 
-## Estrutura principal
+## Estado atual
 
-- `src/lib/supabase.ts` inicializa o cliente Supabase com `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
-- `src/context/AuthContext.tsx` mantém sessão e logout.
-- `src/components/ProtectedRoute.tsx` protege rotas.
-- `src/routes/` contém `login`, `apartments`, `stays`.
-- `src/data/` contém CRUD simples para Supabase.
+Projeto em fase inicial com:
 
-## Configuração de ambiente
+- autenticação por email/password e GitHub OAuth;
+- gestão de apartamentos;
+- gestão de registos/estadias;
+- proteção de rotas no frontend.
 
-Cria um ficheiro `.env.local` na raiz do projeto (ou usa `.env.example`):
+## Arranque rápido
 
+1. Instalar dependências:
+
+```bash
+npm install
 ```
+
+1. Configurar variáveis:
+
+```bash
+cp .env.example .env.local
+```
+
+1. Preencher `.env.local`:
+
+```env
 VITE_SUPABASE_URL=coloca-aqui-a-url
 VITE_SUPABASE_ANON_KEY=coloca-aqui-a-chave-anon
 ```
 
-> Usa apenas a **anon key** do Supabase. Não uses service role key.
+1. Iniciar app:
 
-## Scripts
-
-Instalar dependências:
-
-```
-npm install
-```
-
-Correr localmente:
-
-```
+```bash
 npm run dev
 ```
 
-Gerar build:
+> Usa apenas a `anon key` do Supabase no frontend.
 
-```
-npm run build
-```
+## Scripts
 
-Pré-visualizar build:
+- `npm run dev` inicia ambiente local.
+- `npm run build` gera build de produção.
+- `npm run preview` pré-visualiza build.
+- `npm run typecheck` valida TypeScript.
+- `npm run supabase:push` aplica migrações Supabase.
 
-```
-npm run preview
-```
+## Estrutura principal
 
-## GitHub Pages
+- `src/lib/supabase.ts` cliente Supabase.
+- `src/context/AuthContext.tsx` sessão e logout.
+- `src/components/ProtectedRoute.tsx` proteção de rotas.
+- `src/routes/` rotas da aplicação (`login`, `auth/callback`, `apartments`, `stays`).
+- `src/data/` camada de acesso a dados.
+- `supabase/migrations/` migrações SQL versionadas.
 
-O `vite.config.ts` está configurado com `base: "/al-registo/"`. Se o repositório tiver outro nome, altera esse valor e o `basename` do `BrowserRouter` já usa `import.meta.env.BASE_URL`.
+## Documentação
 
-## Segurança (Supabase)
+- Arquitetura: `docs/architecture.md`
+- Roadmap: `docs/roadmap.md`
+- Setup Supabase: `docs/supabase-setup.md`
+- Checklist RLS: `docs/supabase-rls-checklist.md`
+- Migrações: `supabase/migrations/`
 
-Checklist de pré-produção para RLS/políticas:
+## Deploy em GitHub Pages
 
-- `docs/supabase-rls-checklist.md`
-
-Guia de ligação e aplicação de migrações:
-
-- `docs/supabase-setup.md`
-
-Migrações SQL versionadas:
-
-- `supabase/migrations/20260224152000_security_rls.sql`
-- `supabase/migrations/20260224153000_owner_not_null.sql`
+O `vite.config.ts` usa `base: "/al-registo/"`. Se o nome do repositório for outro, atualiza esse valor.

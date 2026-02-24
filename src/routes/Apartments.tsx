@@ -1,5 +1,9 @@
 import { type FormEvent, useEffect, useState } from 'react'
-import { createApartment, listApartments } from '../data/apartments'
+import {
+  createApartment,
+  deleteApartment,
+  listApartments,
+} from '../data/apartments'
 import { logError, toPublicErrorMessage } from '../lib/errors'
 import type { Apartment } from '../types'
 
@@ -10,6 +14,7 @@ export default function Apartments() {
   const [notice, setNotice] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
 
   const loadApartments = async () => {
     setLoading(true)
@@ -59,6 +64,28 @@ export default function Apartments() {
     }
   }
 
+  const handleDelete = async (apartment: Apartment) => {
+    const shouldDelete = window.confirm(
+      `Eliminar o apartamento "${apartment.name}"?`,
+    )
+    if (!shouldDelete) return
+
+    setErrorMessage(null)
+    setNotice(null)
+    setDeletingId(apartment.id)
+
+    try {
+      await deleteApartment(apartment.id)
+      setNotice('Apartamento eliminado.')
+      await loadApartments()
+    } catch (error) {
+      logError('Erro a eliminar apartamento', error)
+      setErrorMessage(toPublicErrorMessage(error, 'Erro ao eliminar apartamento.'))
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   return (
     <section>
       <h1>Apartamentos</h1>
@@ -89,12 +116,22 @@ export default function Apartments() {
           <thead>
             <tr>
               <th>Nome</th>
+              <th>Ações</th>
             </tr>
           </thead>
           <tbody>
             {apartments.map((apartment) => (
               <tr key={apartment.id}>
                 <td>{apartment.name}</td>
+                <td>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(apartment)}
+                    disabled={deletingId === apartment.id}
+                  >
+                    {deletingId === apartment.id ? 'A eliminar...' : 'Eliminar'}
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

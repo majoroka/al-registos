@@ -55,6 +55,7 @@ npx supabase link --project-ref <PROJECT_REF>
 
 As migracoes ja estao no repo:
 
+- `supabase/migrations/20260224151000_initial_schema.sql`
 - `supabase/migrations/20260224152000_security_rls.sql`
 - `supabase/migrations/20260224153000_owner_not_null.sql`
 
@@ -64,7 +65,18 @@ Aplica:
 npx supabase db push
 ```
 
-## 5) Backfill de owner_id (se houver dados antigos)
+## 5) URL Configuration para OAuth GitHub
+
+Em `Authentication -> URL Configuration` do Supabase:
+
+- `Site URL`: `http://127.0.0.1:5173/al-registo/`
+- `Redirect URLs`:
+  - `http://127.0.0.1:5173/al-registo/auth/callback`
+  - `http://localhost:5173/al-registo/auth/callback`
+  - (opcional) `http://127.0.0.1:5173/al-registo/`
+  - (opcional) `http://localhost:5173/al-registo/`
+
+## 6) Backfill de owner_id (se houver dados antigos)
 
 Antes da migracao `20260224153000_owner_not_null.sql`, garante que nao ha `owner_id` nulo:
 
@@ -83,4 +95,3 @@ Depois volta a correr:
 ```bash
 npx supabase db push
 ```
-

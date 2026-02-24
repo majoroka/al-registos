@@ -31,3 +31,11 @@ export async function createApartment(name: string): Promise<Apartment> {
 
   return data
 }
+
+export async function deleteApartment(id: number): Promise<void> {
+  const { error } = await supabase.from('apartments').delete().eq('id', id)
+
+  if (error) {
+    throw error
+  }
+}

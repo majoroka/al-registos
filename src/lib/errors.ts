@@ -33,6 +33,10 @@ export function toPublicErrorMessage(
     return 'Já existe um registo com esse valor.'
   }
 
+  if (message.includes('foreign key constraint')) {
+    return 'Não é possível eliminar porque existem registos associados.'
+  }
+
   if (message.includes('violates row-level security policy')) {
     return 'Sem permissões para esta operação.'
   }

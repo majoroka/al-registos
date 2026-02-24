@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import type { Apartment } from '../types'
 import type { StayInput, StayWithApartment } from '../types'
 
 export type StayFilters = {
@@ -8,6 +9,26 @@ export type StayFilters = {
 
 const staySelect =
   'id, guest_name, guest_phone, guest_email, guest_address, apartment_id, people_count, nights_count, linen, rating, notes, year, created_at, apartment:apartments(id, name)'
+
+type RawStayWithApartment = Omit<StayWithApartment, 'apartment'> & {
+  apartment?: Apartment | Apartment[] | null
+}
+
+function normalizeApartment(
+  apartment: RawStayWithApartment['apartment'],
+): Apartment | null | undefined {
+  if (Array.isArray(apartment)) {
+    return apartment[0] ?? null
+  }
+  return apartment
+}
+
+function normalizeStay(row: RawStayWithApartment): StayWithApartment {
+  return {
+    ...row,
+    apartment: normalizeApartment(row.apartment),
+  }
+}
 
 export async function listStays(
   filters: StayFilters,
@@ -30,7 +51,8 @@ export async function listStays(
     throw error
   }
 
-  return data ?? []
+  const rows = (data ?? []) as RawStayWithApartment[]
+  return rows.map(normalizeStay)
 }
 
 export async function createStay(payload: StayInput): Promise<StayWithApartment> {
@@ -48,7 +70,7 @@ export async function createStay(payload: StayInput): Promise<StayWithApartment>
     throw new Error('Não foi possível criar o registo.')
   }
 
-  return data
+  return normalizeStay(data as RawStayWithApartment)
 }
 
 export async function updateStay(
@@ -70,7 +92,7 @@ export async function updateStay(
     throw new Error('Não foi possível atualizar o registo.')
   }
 
-  return data
+  return normalizeStay(data as RawStayWithApartment)
 }
 
 export async function deleteStay(id: number): Promise<void> {

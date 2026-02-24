@@ -2,6 +2,7 @@ import { Link, Navigate, Route, Routes } from 'react-router-dom'
 import ProtectedRoute from './components/ProtectedRoute'
 import { useAuth } from './context/AuthContext'
 import Apartments from './routes/Apartments'
+import AuthCallback from './routes/AuthCallback'
 import Login from './routes/Login'
 import Stays from './routes/Stays'
 
@@ -22,6 +23,7 @@ export default function App() {
 
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
         <Route
           path="/apartments"
           element={

@@ -10,7 +10,8 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [passwordLoading, setPasswordLoading] = useState(false)
+  const [oauthLoading, setOauthLoading] = useState(false)
 
   useEffect(() => {
     if (session) {
@@ -30,7 +31,7 @@ export default function Login() {
       return
     }
 
-    setLoading(true)
+    setPasswordLoading(true)
 
     const { error } = await supabase.auth.signInWithPassword({
       email: normalizedEmail,
@@ -44,13 +45,37 @@ export default function Login() {
       )
     }
 
-    setLoading(false)
+    setPasswordLoading(false)
+  }
+
+  const handleGitHubLogin = async () => {
+    setErrorMessage(null)
+    setOauthLoading(true)
+
+    const redirectPath = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/auth/callback`
+    const redirectTo = new URL(redirectPath, window.location.origin).toString()
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'github',
+      options: { redirectTo },
+    })
+
+    if (error) {
+      logError('Erro no login com GitHub', error)
+      setErrorMessage(
+        toPublicErrorMessage(error, 'Não foi possível iniciar sessão com GitHub.'),
+      )
+      setOauthLoading(false)
+    }
   }
 
   return (
     <section>
       <h1>Login</h1>
-      <p>Usa o teu email e password para entrar.</p>
+      <p>Entra com GitHub ou usa o teu email e password.</p>
+
+      <button type="button" onClick={handleGitHubLogin} disabled={oauthLoading || passwordLoading}>
+        {oauthLoading ? 'A redirecionar para GitHub...' : 'Entrar com GitHub'}
+      </button>
 
       <form onSubmit={handleSubmit}>
         <label>
@@ -75,8 +100,8 @@ export default function Login() {
           />
         </label>
 
-        <button type="submit" disabled={loading}>
-          {loading ? 'A entrar...' : 'Entrar'}
+        <button type="submit" disabled={passwordLoading || oauthLoading}>
+          {passwordLoading ? 'A entrar...' : 'Entrar com email'}
         </button>
       </form>
 
