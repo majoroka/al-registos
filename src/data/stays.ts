@@ -8,7 +8,7 @@ export type StayFilters = {
 }
 
 const staySelect =
-  'id, guest_name, guest_phone, guest_email, guest_address, apartment_id, people_count, nights_count, linen, rating, notes, year, created_at, apartment:apartments(id, name)'
+  'id, guest_name, guest_phone, guest_email, guest_address, apartment_id, people_count, nights_count, linen, rating, notes, check_in, check_out, year, created_at, apartment:apartments(id, name)'
 
 type RawStayWithApartment = Omit<StayWithApartment, 'apartment'> & {
   apartment?: Apartment | Apartment[] | null

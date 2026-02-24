@@ -58,6 +58,8 @@ As migracoes ja estao no repo:
 - `supabase/migrations/20260224151000_initial_schema.sql`
 - `supabase/migrations/20260224152000_security_rls.sql`
 - `supabase/migrations/20260224153000_owner_not_null.sql`
+- `supabase/migrations/20260224191500_add_checkin_checkout.sql`
+- `supabase/migrations/20260224194000_sync_nights_from_dates.sql`
 
 Aplica:
 

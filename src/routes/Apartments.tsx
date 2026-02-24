@@ -1,6 +1,6 @@
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { listApartments } from '../data/apartments'
-import { createStay, deleteStay, listStays, updateStay } from '../data/stays'
+import { createStay, listStays, updateStay } from '../data/stays'
 import { logError, toPublicErrorMessage } from '../lib/errors'
 import type { Apartment, StayInput, StayWithApartment } from '../types'
 
@@ -12,11 +12,10 @@ type GuestForm = {
   guest_email: string
   guest_address: string
   people_count: string
-  nights_count: string
   linen: string
-  rating: string
   notes: string
-  year: string
+  check_in: string
+  check_out: string
 }
 
 const currentYear = new Date().getFullYear()
@@ -29,11 +28,10 @@ const emptyForm: GuestForm = {
   guest_email: '',
   guest_address: '',
   people_count: '1',
-  nights_count: '1',
-  linen: '',
-  rating: '',
+  linen: 'Com Roupa',
   notes: '',
-  year: String(currentYear),
+  check_in: '',
+  check_out: '',
 }
 
 function parsePositiveInteger(value: string): number | null {
@@ -51,6 +49,20 @@ function parseYear(value: string): number | null {
   return parsed
 }
 
+function calculateNights(checkIn: string, checkOut: string): number | null {
+  if (!checkIn || !checkOut) return null
+
+  const start = new Date(`${checkIn}T00:00:00`)
+  const end = new Date(`${checkOut}T00:00:00`)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
+
+  const diffMs = end.getTime() - start.getTime()
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
+  if (diffDays <= 0) return null
+
+  return diffDays
+}
+
 function toGuestForm(stay: StayWithApartment): GuestForm {
   return {
     guest_name: stay.guest_name,
@@ -58,11 +70,10 @@ function toGuestForm(stay: StayWithApartment): GuestForm {
     guest_email: stay.guest_email,
     guest_address: stay.guest_address,
     people_count: String(stay.people_count),
-    nights_count: String(stay.nights_count),
-    linen: stay.linen ?? '',
-    rating: stay.rating === null ? '' : String(stay.rating),
+    linen: stay.linen === 'Sem Roupa' ? 'Sem Roupa' : 'Com Roupa',
     notes: stay.notes ?? '',
-    year: String(stay.year),
+    check_in: stay.check_in ?? '',
+    check_out: stay.check_out ?? '',
   }
 }
 
@@ -75,8 +86,11 @@ function validateGuestForm(
   const guestEmail = form.guest_email.trim().toLowerCase()
   const guestAddress = form.guest_address.trim()
   const peopleCount = parsePositiveInteger(form.people_count)
-  const nightsCount = parsePositiveInteger(form.nights_count)
-  const year = parseYear(form.year)
+  const checkIn = form.check_in
+  const checkOut = form.check_out
+  const nightsCount = calculateNights(checkIn, checkOut)
+  const checkInYear = checkIn ? Number(checkIn.slice(0, 4)) : null
+  const year = checkInYear ? parseYear(String(checkInYear)) : null
 
   if (guestName.length < 2) {
     return { error: 'O nome do hóspede é obrigatório.' }
@@ -98,22 +112,20 @@ function validateGuestForm(
     return { error: 'Número de pessoas inválido.' }
   }
 
+  if (!checkIn || !checkOut) {
+    return { error: 'Preenche check-in e check-out.' }
+  }
+
   if (!nightsCount) {
-    return { error: 'Número de noites inválido.' }
+    return { error: 'Check-out deve ser posterior ao check-in.' }
   }
 
   if (!year) {
-    return { error: `Ano inválido. Usa um valor entre ${minYear} e ${maxYear}.` }
+    return { error: `Ano de check-in inválido. Usa um valor entre ${minYear} e ${maxYear}.` }
   }
 
-  const ratingText = form.rating.trim()
-  let rating: number | null = null
-  if (ratingText) {
-    const parsedRating = Number(ratingText)
-    if (!Number.isFinite(parsedRating) || parsedRating < 0 || parsedRating > 10) {
-      return { error: 'A avaliação deve estar entre 0 e 10.' }
-    }
-    rating = parsedRating
+  if (form.linen !== 'Com Roupa' && form.linen !== 'Sem Roupa') {
+    return { error: 'Seleciona uma opção válida de roupa.' }
   }
 
   return {
@@ -125,58 +137,35 @@ function validateGuestForm(
       apartment_id: apartmentId,
       people_count: peopleCount,
       nights_count: nightsCount,
-      linen: form.linen.trim() || null,
-      rating,
+      linen: form.linen,
+      rating: null,
       notes: form.notes.trim() || null,
       year,
+      check_in: checkIn,
+      check_out: checkOut,
     },
   }
 }
 
 export default function Apartments() {
   const [apartments, setApartments] = useState<Apartment[]>([])
-  const [stays, setStays] = useState<StayWithApartment[]>([])
   const [selectedApartmentId, setSelectedApartmentId] = useState<number | null>(null)
   const [selectedStayId, setSelectedStayId] = useState<number | null>(null)
   const [editorMode, setEditorMode] = useState<StayEditorMode>(null)
   const [form, setForm] = useState<GuestForm>(emptyForm)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [globalSearchText, setGlobalSearchText] = useState('')
+  const [globalSearchResults, setGlobalSearchResults] = useState<StayWithApartment[]>([])
+  const [hasSearched, setHasSearched] = useState(false)
+  const [searchingGlobal, setSearchingGlobal] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [loadingApartments, setLoadingApartments] = useState(true)
-  const [loadingStays, setLoadingStays] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [deletingId, setDeletingId] = useState<number | null>(null)
-  const searchInputRef = useRef<HTMLInputElement | null>(null)
 
   const selectedApartment = useMemo(
     () => apartments.find((apartment) => apartment.id === selectedApartmentId) ?? null,
     [apartments, selectedApartmentId],
   )
-
-  const selectedStay = useMemo(
-    () => stays.find((stay) => stay.id === selectedStayId) ?? null,
-    [stays, selectedStayId],
-  )
-
-  const filteredStays = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase()
-    if (!query) return stays
-
-    return stays.filter((stay) => {
-      const fields = [
-        stay.guest_name,
-        stay.guest_email,
-        stay.guest_phone,
-        stay.guest_address,
-        stay.notes ?? '',
-        String(stay.year),
-      ]
-
-      return fields.some((value) => value.toLowerCase().includes(query))
-    })
-  }, [searchQuery, stays])
 
   const loadApartments = async () => {
     setLoadingApartments(true)
@@ -192,57 +181,17 @@ export default function Apartments() {
     }
   }
 
-  const loadStaysForApartment = async (apartmentId: number) => {
-    setLoadingStays(true)
-    setErrorMessage(null)
-    try {
-      const data = await listStays({ apartmentId })
-      setStays(data)
-    } catch (error) {
-      logError('Erro a carregar hóspedes', error)
-      setErrorMessage(toPublicErrorMessage(error, 'Erro ao carregar hóspedes.'))
-    } finally {
-      setLoadingStays(false)
-    }
-  }
-
   useEffect(() => {
     void loadApartments()
   }, [])
 
-  const handleSelectApartment = async (apartment: Apartment) => {
+  const handleSelectApartment = (apartment: Apartment) => {
     setSelectedApartmentId(apartment.id)
     setSelectedStayId(null)
-    setEditorMode(null)
-    setSearchQuery('')
-    setMenuOpen(false)
-    setNotice(null)
-    await loadStaysForApartment(apartment.id)
-  }
-
-  const handleStartCreate = () => {
-    if (!selectedApartmentId) {
-      setErrorMessage('Seleciona primeiro um apartamento.')
-      return
-    }
     setEditorMode('create')
     setForm(emptyForm)
-    setMenuOpen(false)
-  }
-
-  const handleStartEdit = (stay: StayWithApartment) => {
-    setSelectedStayId(stay.id)
-    setEditorMode('edit')
-    setForm(toGuestForm(stay))
-    setMenuOpen(false)
-  }
-
-  const handleStartEditSelected = () => {
-    if (!selectedStay) {
-      setErrorMessage('Seleciona um hóspede para editar.')
-      return
-    }
-    handleStartEdit(selectedStay)
+    setErrorMessage(null)
+    setNotice(null)
   }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -276,7 +225,9 @@ export default function Apartments() {
       setEditorMode(null)
       setForm(emptyForm)
       setSelectedStayId(saved.id)
-      await loadStaysForApartment(selectedApartmentId)
+      setGlobalSearchResults((prev) =>
+        prev.map((stay) => (stay.id === saved.id ? { ...stay, ...saved } : stay)),
+      )
     } catch (error) {
       logError('Erro a guardar registo', error)
       setErrorMessage(toPublicErrorMessage(error, 'Erro ao guardar registo.'))
@@ -285,46 +236,69 @@ export default function Apartments() {
     }
   }
 
-  const handleDeleteStay = async (stay: StayWithApartment) => {
-    const shouldDelete = window.confirm(`Eliminar o registo de "${stay.guest_name}"?`)
-    if (!shouldDelete) return
-
+  const handleGlobalSearch = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const query = globalSearchText.trim().toLowerCase()
     setErrorMessage(null)
-    setNotice(null)
-    setDeletingId(stay.id)
+    setHasSearched(true)
 
-    try {
-      await deleteStay(stay.id)
-      setNotice('Registo eliminado.')
-
-      if (selectedApartmentId) {
-        await loadStaysForApartment(selectedApartmentId)
-      }
-
-      if (selectedStayId === stay.id) {
-        setSelectedStayId(null)
-      }
-    } catch (error) {
-      logError('Erro a eliminar registo', error)
-      setErrorMessage(toPublicErrorMessage(error, 'Erro ao eliminar registo.'))
-    } finally {
-      setDeletingId(null)
-    }
-  }
-
-  const handleDeleteSelected = async () => {
-    if (!selectedStay) {
-      setErrorMessage('Seleciona um hóspede para apagar.')
+    if (!query) {
+      setGlobalSearchResults([])
       return
     }
-    await handleDeleteStay(selectedStay)
+
+    setSearchingGlobal(true)
+    try {
+      const allStays = await listStays({})
+      const results = allStays.filter((stay) => {
+        const fields = [
+          stay.guest_name,
+          stay.guest_email,
+          stay.guest_phone,
+          stay.guest_address,
+          stay.notes ?? '',
+          stay.apartment?.name ?? '',
+          String(stay.year),
+          stay.check_in ?? '',
+          stay.check_out ?? '',
+        ]
+        return fields.some((value) => value.toLowerCase().includes(query))
+      })
+      setGlobalSearchResults(results)
+    } catch (error) {
+      logError('Erro na pesquisa global', error)
+      setErrorMessage(toPublicErrorMessage(error, 'Erro ao pesquisar registos.'))
+    } finally {
+      setSearchingGlobal(false)
+    }
   }
 
-  const handleOpenSearch = () => {
-    setMenuOpen(true)
-    window.setTimeout(() => {
-      searchInputRef.current?.focus()
-    }, 0)
+  const handleGlobalSearchInputChange = (value: string) => {
+    setGlobalSearchText(value)
+    if (!value.trim()) {
+      setGlobalSearchResults([])
+      setHasSearched(false)
+    }
+  }
+
+  const handleClearGlobalSearch = () => {
+    setGlobalSearchText('')
+    setGlobalSearchResults([])
+    setHasSearched(false)
+    setSelectedApartmentId(null)
+    setSelectedStayId(null)
+    setEditorMode(null)
+    setNotice(null)
+    setErrorMessage(null)
+  }
+
+  const handleOpenSearchResult = (stay: StayWithApartment) => {
+    setErrorMessage(null)
+    setNotice(null)
+    setSelectedStayId(stay.id)
+    setSelectedApartmentId(stay.apartment_id)
+    setForm(toGuestForm(stay))
+    setEditorMode('edit')
   }
 
   return (
@@ -349,120 +323,74 @@ export default function Apartments() {
                 type="button"
                 className={`apartment-tile ${selectedApartmentId === apartment.id ? 'selected' : ''}`}
                 onClick={() => {
-                  void handleSelectApartment(apartment)
+                  handleSelectApartment(apartment)
                 }}
               >
-                <span className="tile-label">Apartamento</span>
+                <span className="tile-label">CRIAR REGISTO</span>
                 <strong>{apartment.name}</strong>
               </button>
             ))}
           </div>
         )}
-      </section>
 
-      {selectedApartment && (
-        <section className="guest-board">
-          <div className="guest-board-header">
-            <div>
-              <h2>{selectedApartment.name}</h2>
-              <p>
-                {filteredStays.length} {filteredStays.length === 1 ? 'hóspede' : 'hóspedes'}
-              </p>
-            </div>
+        <form className="global-search-form" onSubmit={handleGlobalSearch}>
+          <label>
+            Pesquisa global (todos os apartamentos)
+            <input
+              type="search"
+              value={globalSearchText}
+              onChange={(event) => handleGlobalSearchInputChange(event.target.value)}
+              placeholder="Nome, email, telefone, apartamento, datas..."
+            />
+          </label>
+          <div className="global-search-actions">
+            <button type="submit" disabled={searchingGlobal}>
+              {searchingGlobal ? 'A pesquisar...' : 'Pesquisar'}
+            </button>
             <button
               type="button"
-              className={`hamburger-btn ${menuOpen ? 'active' : ''}`}
-              onClick={() => setMenuOpen((prev) => !prev)}
-              aria-label="Abrir ações"
+              className="clear-btn"
+              onClick={handleClearGlobalSearch}
+              disabled={!globalSearchText && !hasSearched && globalSearchResults.length === 0}
             >
-              <span />
-              <span />
-              <span />
+              Limpar
             </button>
           </div>
+        </form>
 
-          {menuOpen && (
-            <div className="action-menu">
-              <div className="menu-actions">
-                <button type="button" onClick={handleStartCreate}>
-                  Criar
-                </button>
-                <button type="button" onClick={handleStartEditSelected} disabled={!selectedStay}>
-                  Editar
-                </button>
-                <button type="button" onClick={() => void handleDeleteSelected()} disabled={!selectedStay}>
-                  Apagar
-                </button>
-                <button type="button" onClick={handleOpenSearch}>
-                  Pesquisar
-                </button>
-              </div>
-
-              <label className="menu-search">
-                Pesquisa rápida
-                <input
-                  ref={searchInputRef}
-                  type="search"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Nome, email, telefone..."
-                />
-              </label>
-            </div>
-          )}
-
-          {notice && <p className="notice">{notice}</p>}
-          {errorMessage && <p className="error">{errorMessage}</p>}
-
-          {loadingStays ? (
-            <p>A carregar hóspedes...</p>
-          ) : filteredStays.length === 0 ? (
-            <p className="empty-state">Sem hóspedes para este apartamento.</p>
-          ) : (
-            <ul className="guest-list">
-              {filteredStays.map((stay) => (
-                <li
-                  key={stay.id}
-                  className={`guest-item ${selectedStayId === stay.id ? 'selected' : ''}`}
-                  onClick={() => setSelectedStayId(stay.id)}
-                >
-                  <div className="guest-main">
-                    <h3>{stay.guest_name}</h3>
-                    <p>{stay.guest_email}</p>
-                    <p>{stay.guest_phone}</p>
-                  </div>
-                  <div className="guest-meta">
-                    <span>{stay.nights_count} noites</span>
-                    <span>{stay.people_count} pessoas</span>
-                    <span>{stay.year}</span>
-                  </div>
-                  <div className="guest-row-actions">
+        {hasSearched && (
+          <div className="global-search-results">
+            <h3>Resultados da pesquisa</h3>
+            {searchingGlobal ? (
+              <p>A pesquisar...</p>
+            ) : globalSearchResults.length === 0 ? (
+              <p className="empty-state">Sem resultados para a pesquisa atual.</p>
+            ) : (
+              <ul>
+                {globalSearchResults.map((stay) => (
+                  <li key={`search-${stay.id}`}>
+                    <div>
+                      <strong>{stay.guest_name}</strong>
+                      <p>{stay.apartment?.name ?? 'Apartamento desconhecido'}</p>
+                      <p>{stay.check_in ?? '-'} → {stay.check_out ?? '-'}</p>
+                    </div>
                     <button
                       type="button"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        handleStartEdit(stay)
+                      onClick={() => {
+                        handleOpenSearchResult(stay)
                       }}
                     >
-                      Editar
+                      Abrir
                     </button>
-                    <button
-                      type="button"
-                      disabled={deletingId === stay.id}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        void handleDeleteStay(stay)
-                      }}
-                    >
-                      {deletingId === stay.id ? 'A apagar...' : 'Apagar'}
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </section>
+      {notice && <p className="notice">{notice}</p>}
+      {errorMessage && !editorMode && <p className="error">{errorMessage}</p>}
 
       {editorMode && selectedApartment && (
         <div className="editor-backdrop" onClick={() => setEditorMode(null)}>
@@ -476,6 +404,7 @@ export default function Apartments() {
                 Fechar
               </button>
             </div>
+            {errorMessage && <p className="error">{errorMessage}</p>}
 
             <form className="guest-form" onSubmit={handleSubmit}>
               <label>
@@ -530,6 +459,28 @@ export default function Apartments() {
                 />
               </label>
               <label>
+                Check-in
+                <input
+                  type="date"
+                  value={form.check_in}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, check_in: event.target.value }))
+                  }
+                  required
+                />
+              </label>
+              <label>
+                Check-out
+                <input
+                  type="date"
+                  value={form.check_out}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, check_out: event.target.value }))
+                  }
+                  required
+                />
+              </label>
+              <label>
                 Nº Pessoas
                 <input
                   type="number"
@@ -543,55 +494,22 @@ export default function Apartments() {
                 />
               </label>
               <label>
-                Nº Noites
-                <input
-                  type="number"
-                  min="1"
-                  max="365"
-                  value={form.nights_count}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, nights_count: event.target.value }))
-                  }
-                  required
-                />
-              </label>
-              <label>
-                Ano
-                <input
-                  type="number"
-                  min={minYear}
-                  max={maxYear}
-                  value={form.year}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, year: event.target.value }))
-                  }
-                  required
-                />
-              </label>
-              <label>
-                Avaliação
-                <input
-                  type="number"
-                  min="0"
-                  max="10"
-                  step="0.1"
-                  value={form.rating}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, rating: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
                 Roupa
-                <input
-                  type="text"
+                <select
                   value={form.linen}
                   onChange={(event) =>
                     setForm((prev) => ({ ...prev, linen: event.target.value }))
                   }
-                  maxLength={120}
-                />
+                  required
+                >
+                  <option value="Com Roupa">Com Roupa</option>
+                  <option value="Sem Roupa">Sem Roupa</option>
+                </select>
               </label>
+              <p className="stay-nights-preview field-span-2">
+                Noites calculadas:{' '}
+                <strong>{calculateNights(form.check_in, form.check_out) ?? '-'}</strong>
+              </p>
               <label className="field-span-2">
                 Notas
                 <textarea

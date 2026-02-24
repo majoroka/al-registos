@@ -16,6 +16,8 @@ export type Stay = {
   linen: string | null
   rating: number | null
   notes: string | null
+  check_in?: string | null
+  check_out?: string | null
   year: number
   created_at?: string | null
 }
