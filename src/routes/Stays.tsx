@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import { listApartments } from '../data/apartments'
 import { createStay, deleteStay, listStays, updateStay } from '../data/stays'
+import { logError, toPublicErrorMessage } from '../lib/errors'
 import type { Apartment, StayInput, StayWithApartment } from '../types'
 
 type StayForm = {
@@ -18,6 +19,9 @@ type StayForm = {
 }
 
 const currentYear = new Date().getFullYear()
+const minYear = 2000
+const maxYear = currentYear + 1
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const emptyForm: StayForm = {
   guest_name: '',
@@ -33,6 +37,94 @@ const emptyForm: StayForm = {
   year: String(currentYear),
 }
 
+function parsePositiveInteger(value: string): number | null {
+  const trimmed = value.trim()
+  if (!/^\d+$/.test(trimmed)) return null
+
+  const parsed = Number(trimmed)
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) return null
+  return parsed
+}
+
+function parseYear(value: string): number | null {
+  const parsed = parsePositiveInteger(value)
+  if (!parsed || parsed < minYear || parsed > maxYear) return null
+  return parsed
+}
+
+function validateStayForm(form: StayForm): { payload: StayInput } | { error: string } {
+  const guestName = form.guest_name.trim()
+  const guestPhone = form.guest_phone.trim()
+  const guestEmail = form.guest_email.trim().toLowerCase()
+  const guestAddress = form.guest_address.trim()
+  const apartmentId = parsePositiveInteger(form.apartment_id)
+  const peopleCount = parsePositiveInteger(form.people_count)
+  const nightsCount = parsePositiveInteger(form.nights_count)
+  const year = parseYear(form.year)
+
+  if (guestName.length < 2) {
+    return { error: 'O nome do hóspede é obrigatório.' }
+  }
+
+  if (!/^[0-9+()\-\s]{6,20}$/.test(guestPhone)) {
+    return { error: 'Telefone inválido.' }
+  }
+
+  if (!emailPattern.test(guestEmail)) {
+    return { error: 'Email inválido.' }
+  }
+
+  if (guestAddress.length < 5) {
+    return { error: 'A morada é obrigatória.' }
+  }
+
+  if (!apartmentId) {
+    return { error: 'Seleciona um apartamento válido.' }
+  }
+
+  if (!peopleCount) {
+    return { error: 'Nº de pessoas inválido.' }
+  }
+
+  if (!nightsCount) {
+    return { error: 'Nº de noites inválido.' }
+  }
+
+  if (!year) {
+    return { error: `O ano deve estar entre ${minYear} e ${maxYear}.` }
+  }
+
+  const ratingValue = form.rating.trim()
+  let rating: number | null = null
+  if (ratingValue) {
+    const parsedRating = Number(ratingValue)
+    if (
+      !Number.isFinite(parsedRating) ||
+      parsedRating < 0 ||
+      parsedRating > 10
+    ) {
+      return { error: 'A avaliação deve estar entre 0 e 10.' }
+    }
+    rating = parsedRating
+  }
+
+  return {
+    payload: {
+      guest_name: guestName,
+      guest_phone: guestPhone,
+      guest_email: guestEmail,
+      guest_address: guestAddress,
+      apartment_id: apartmentId,
+      people_count: peopleCount,
+      nights_count: nightsCount,
+      linen: form.linen.trim() || null,
+      rating,
+      notes: form.notes.trim() || null,
+      year,
+    },
+  }
+}
+
 export default function Stays() {
   const [apartments, setApartments] = useState<Apartment[]>([])
   const [stays, setStays] = useState<StayWithApartment[]>([])
@@ -45,15 +137,15 @@ export default function Stays() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
 
   const loadApartments = async () => {
     try {
       const data = await listApartments()
       setApartments(data)
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Erro ao carregar apartamentos.',
-      )
+      logError('Erro a carregar apartamentos', error)
+      setErrorMessage(toPublicErrorMessage(error, 'Erro ao carregar apartamentos.'))
     }
   }
 
@@ -61,18 +153,34 @@ export default function Stays() {
     setLoading(true)
     setErrorMessage(null)
     try {
+      const yearFilter = filters.year.trim()
+      const apartmentIdFilter = filters.apartmentId.trim()
+      const parsedYear = yearFilter ? parseYear(yearFilter) : null
+      const parsedApartmentId = apartmentIdFilter
+        ? parsePositiveInteger(apartmentIdFilter)
+        : null
+
+      if (yearFilter && !parsedYear) {
+        setErrorMessage(`Ano inválido. Usa um valor entre ${minYear} e ${maxYear}.`)
+        setLoading(false)
+        return
+      }
+
+      if (apartmentIdFilter && !parsedApartmentId) {
+        setErrorMessage('Apartamento inválido no filtro.')
+        setLoading(false)
+        return
+      }
+
       const parsedFilters = {
-        year: filters.year ? Number(filters.year) : undefined,
-        apartmentId: filters.apartmentId
-          ? Number(filters.apartmentId)
-          : undefined,
+        year: parsedYear ?? undefined,
+        apartmentId: parsedApartmentId ?? undefined,
       }
       const data = await listStays(parsedFilters)
       setStays(data)
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Erro ao carregar registos.',
-      )
+      logError('Erro a carregar registos', error)
+      setErrorMessage(toPublicErrorMessage(error, 'Erro ao carregar registos.'))
     } finally {
       setLoading(false)
     }
@@ -93,40 +201,29 @@ export default function Stays() {
     setErrorMessage(null)
     setNotice(null)
 
-    if (!form.apartment_id) {
-      setErrorMessage('Seleciona um apartamento.')
+    const validated = validateStayForm(form)
+    if ('error' in validated) {
+      setErrorMessage(validated.error)
       return
     }
 
-    const payload: StayInput = {
-      guest_name: form.guest_name.trim(),
-      guest_phone: form.guest_phone.trim(),
-      guest_email: form.guest_email.trim(),
-      guest_address: form.guest_address.trim(),
-      apartment_id: Number(form.apartment_id),
-      people_count: Number(form.people_count),
-      nights_count: Number(form.nights_count),
-      linen: form.linen.trim() || null,
-      rating: form.rating ? Number(form.rating) : null,
-      notes: form.notes.trim() || null,
-      year: Number(form.year) || currentYear,
-    }
-
+    setSubmitting(true)
     try {
       if (editingId) {
-        await updateStay(editingId, payload)
+        await updateStay(editingId, validated.payload)
         setNotice('Registo atualizado.')
       } else {
-        await createStay(payload)
+        await createStay(validated.payload)
         setNotice('Registo criado.')
       }
       setForm(emptyForm)
       setEditingId(null)
       await loadStays()
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Erro ao guardar registo.',
-      )
+      logError('Erro ao guardar registo', error)
+      setErrorMessage(toPublicErrorMessage(error, 'Erro ao guardar registo.'))
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -158,9 +255,8 @@ export default function Stays() {
       setNotice('Registo eliminado.')
       await loadStays()
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Erro ao eliminar registo.',
-      )
+      logError('Erro ao eliminar registo', error)
+      setErrorMessage(toPublicErrorMessage(error, 'Erro ao eliminar registo.'))
     }
   }
 
@@ -180,6 +276,8 @@ export default function Stays() {
             Ano
             <input
               type="number"
+              min={minYear}
+              max={maxYear}
               value={filters.year}
               onChange={(event) =>
                 setFilters((prev) => ({ ...prev, year: event.target.value }))
@@ -219,6 +317,8 @@ export default function Stays() {
             onChange={(event) =>
               setForm((prev) => ({ ...prev, guest_name: event.target.value }))
             }
+            minLength={2}
+            maxLength={120}
             required
           />
         </label>
@@ -230,6 +330,8 @@ export default function Stays() {
             onChange={(event) =>
               setForm((prev) => ({ ...prev, guest_phone: event.target.value }))
             }
+            minLength={6}
+            maxLength={20}
             required
           />
         </label>
@@ -241,6 +343,7 @@ export default function Stays() {
             onChange={(event) =>
               setForm((prev) => ({ ...prev, guest_email: event.target.value }))
             }
+            autoComplete="email"
             required
           />
         </label>
@@ -255,6 +358,8 @@ export default function Stays() {
                 guest_address: event.target.value,
               }))
             }
+            minLength={5}
+            maxLength={200}
             required
           />
         </label>
@@ -280,6 +385,7 @@ export default function Stays() {
           <input
             type="number"
             min="1"
+            max="99"
             value={form.people_count}
             onChange={(event) =>
               setForm((prev) => ({
@@ -295,6 +401,7 @@ export default function Stays() {
           <input
             type="number"
             min="1"
+            max="365"
             value={form.nights_count}
             onChange={(event) =>
               setForm((prev) => ({
@@ -313,6 +420,7 @@ export default function Stays() {
             onChange={(event) =>
               setForm((prev) => ({ ...prev, linen: event.target.value }))
             }
+            maxLength={120}
           />
         </label>
         <label>
@@ -320,6 +428,8 @@ export default function Stays() {
           <input
             type="number"
             min="0"
+            max="10"
+            step="0.1"
             value={form.rating}
             onChange={(event) =>
               setForm((prev) => ({ ...prev, rating: event.target.value }))
@@ -333,12 +443,15 @@ export default function Stays() {
             onChange={(event) =>
               setForm((prev) => ({ ...prev, notes: event.target.value }))
             }
+            maxLength={1000}
           />
         </label>
         <label>
           Ano
           <input
             type="number"
+            min={minYear}
+            max={maxYear}
             value={form.year}
             onChange={(event) =>
               setForm((prev) => ({ ...prev, year: event.target.value }))
@@ -348,8 +461,12 @@ export default function Stays() {
         </label>
 
         <div className="toolbar">
-          <button type="submit">
-            {editingId ? 'Guardar alterações' : 'Criar registo'}
+          <button type="submit" disabled={submitting}>
+            {submitting
+              ? 'A guardar...'
+              : editingId
+                ? 'Guardar alterações'
+                : 'Criar registo'}
           </button>
           {editingId && (
             <button type="button" onClick={handleCancelEdit}>

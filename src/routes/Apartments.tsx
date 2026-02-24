@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import { createApartment, listApartments } from '../data/apartments'
+import { logError, toPublicErrorMessage } from '../lib/errors'
 import type { Apartment } from '../types'
 
 export default function Apartments() {
@@ -8,6 +9,7 @@ export default function Apartments() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
 
   const loadApartments = async () => {
     setLoading(true)
@@ -16,9 +18,8 @@ export default function Apartments() {
       const data = await listApartments()
       setApartments(data)
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Erro ao carregar apartamentos.',
-      )
+      logError('Erro a carregar apartamentos', error)
+      setErrorMessage(toPublicErrorMessage(error, 'Erro ao carregar apartamentos.'))
     } finally {
       setLoading(false)
     }
@@ -33,15 +34,28 @@ export default function Apartments() {
     setErrorMessage(null)
     setNotice(null)
 
+    const normalizedName = name.trim()
+    if (normalizedName.length < 2) {
+      setErrorMessage('O nome do apartamento deve ter pelo menos 2 caracteres.')
+      return
+    }
+
+    if (normalizedName.length > 80) {
+      setErrorMessage('O nome do apartamento não pode ter mais de 80 caracteres.')
+      return
+    }
+
+    setSubmitting(true)
     try {
-      await createApartment(name.trim())
+      await createApartment(normalizedName)
       setName('')
       setNotice('Apartamento criado com sucesso.')
       await loadApartments()
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Erro ao criar apartamento.',
-      )
+      logError('Erro a criar apartamento', error)
+      setErrorMessage(toPublicErrorMessage(error, 'Erro ao criar apartamento.'))
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -56,10 +70,13 @@ export default function Apartments() {
             type="text"
             value={name}
             onChange={(event) => setName(event.target.value)}
+            maxLength={80}
             required
           />
         </label>
-        <button type="submit">Criar</button>
+        <button type="submit" disabled={submitting}>
+          {submitting ? 'A criar...' : 'Criar'}
+        </button>
       </form>
 
       {notice && <p className="notice">{notice}</p>}

@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { logError, toPublicErrorMessage } from '../lib/errors'
 import { supabase } from '../lib/supabase'
 
 export default function Login() {
@@ -20,15 +21,27 @@ export default function Login() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setErrorMessage(null)
+
+    const normalizedEmail = email.trim().toLowerCase()
+    const trimmedPassword = password.trim()
+
+    if (!normalizedEmail || !trimmedPassword) {
+      setErrorMessage('Preenche email e password.')
+      return
+    }
+
     setLoading(true)
 
     const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
+      email: normalizedEmail,
+      password: trimmedPassword,
     })
 
     if (error) {
-      setErrorMessage(error.message)
+      logError('Erro no login', error)
+      setErrorMessage(
+        toPublicErrorMessage(error, 'Não foi possível iniciar sessão.'),
+      )
     }
 
     setLoading(false)
@@ -46,6 +59,7 @@ export default function Login() {
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
+            autoComplete="email"
             required
           />
         </label>
@@ -56,6 +70,7 @@ export default function Login() {
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
             required
           />
         </label>
