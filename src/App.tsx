@@ -4,7 +4,6 @@ import { useAuth } from './context/AuthContext'
 import Apartments from './routes/Apartments'
 import AuthCallback from './routes/AuthCallback'
 import Login from './routes/Login'
-import Stays from './routes/Stays'
 
 export default function App() {
   const { session, signOut } = useAuth()
@@ -12,13 +11,14 @@ export default function App() {
   return (
     <div className="container">
       {session && (
-        <nav>
-          <Link to="/apartments">Apartamentos</Link>
-          <Link to="/stays">Registos</Link>
-          <button type="button" onClick={signOut}>
+        <header className="app-header">
+          <Link to="/apartments" className="brand">
+            AL Registo
+          </Link>
+          <button type="button" onClick={signOut} className="logout-btn">
             Logout
           </button>
-        </nav>
+        </header>
       )}
 
       <Routes>
@@ -32,14 +32,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/stays"
-          element={
-            <ProtectedRoute>
-              <Stays />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/stays" element={<Navigate to="/apartments" replace />} />
         <Route
           path="*"
           element={<Navigate to={session ? '/apartments' : '/login'} replace />}
