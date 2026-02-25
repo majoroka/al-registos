@@ -34,16 +34,25 @@ jobs:
       - name: Validate Supabase env vars
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_URL_SECRET: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_ANON_KEY_SECRET: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
+          export VITE_SUPABASE_URL="${VITE_SUPABASE_URL:-$VITE_SUPABASE_URL_SECRET}"
+          export VITE_SUPABASE_ANON_KEY="${VITE_SUPABASE_ANON_KEY:-$VITE_SUPABASE_ANON_KEY_SECRET}"
           test -n "$VITE_SUPABASE_URL" || (echo "Missing Actions variable: VITE_SUPABASE_URL" && exit 1)
           test -n "$VITE_SUPABASE_ANON_KEY" || (echo "Missing Actions secret: VITE_SUPABASE_ANON_KEY" && exit 1)
 
       - name: Build app
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        run: npm run build
+          VITE_SUPABASE_URL_SECRET: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_ANON_KEY_SECRET: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          export VITE_SUPABASE_URL="${VITE_SUPABASE_URL:-$VITE_SUPABASE_URL_SECRET}"
+          export VITE_SUPABASE_ANON_KEY="${VITE_SUPABASE_ANON_KEY:-$VITE_SUPABASE_ANON_KEY_SECRET}"
+          npm run build
 
       - name: SPA fallback for GitHub Pages
         run: |
