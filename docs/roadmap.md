@@ -9,32 +9,38 @@ Concluir o MVP de registo de AL com segurança mínima de produção, qualidade 
 - [x] Login por email/password.
 - [x] Login por GitHub OAuth.
 - [x] Rotas protegidas.
-- [x] CRUD base de apartamentos.
+- [x] Fluxo principal em `/apartments` (cards -> criar registo).
 - [x] CRUD base de estadias.
+- [x] Pesquisa global com `Pesquisar` e `Limpar`.
+- [x] Menu hamburger com `Consultar`.
+- [x] Filtros de consulta por apartamento, ano e mês.
 - [x] Documentação de setup e checklist de segurança.
 - [x] Criar migração inicial de schema (tabelas e FKs) para projetos novos.
-- [ ] Aplicar migrações no novo projeto Supabase.
+- [x] Aplicar migrações no projeto Supabase ativo.
+- [x] Importar histórico inicial (`clientes_AL.csv`) via migração (43 registos).
 - [x] Corrigir erro de tipagem em `src/data/stays.ts`.
 
 ## Fase 1 - Estabilização (curto prazo)
 
 - [ ] Linting e formatação (`eslint` + `prettier`).
 - [ ] Testes unitários básicos para validações e helpers.
-- [ ] Estados de loading/empty/error mais consistentes nas listas.
-- [ ] Normalizar feedback de erro para todas as rotas.
-- [ ] Melhorar UX do formulário de estadias (máscaras e validações de campo).
+- [ ] Uniformizar estados de loading/empty/error entre pesquisa global e consulta.
+- [ ] Melhorar validação visual de campos no formulário (mensagens por campo).
+- [ ] Fechar pequenos ajustes de alinhamento/responsividade no painel `Consultar`.
 
 ## Fase 2 - Segurança e confiabilidade
 
 - [ ] Validar RLS com testes manuais de multi-utilizador.
-- [ ] Garantir `owner_id not null` em produção após backfill.
-- [ ] Revisão de grants e permissões `anon` vs `authenticated`.
+- [x] Garantir `owner_id not null` após backfill/migração.
+- [x] Revisão base de grants `anon` vs `authenticated` nas migrações.
 - [ ] Logs de auditoria básicos para operações críticas.
 
 ## Fase 3 - Produto (médio prazo)
 
-- [ ] Pesquisa e paginação de registos.
-- [ ] Exportação CSV/PDF.
+- [x] Pesquisa de registos (global + consulta filtrada).
+- [ ] Exportação (`Exportar`) no menu hamburger.
+- [ ] Preencher `check-in/check-out` no histórico importado.
+- [ ] Paginação para listas de resultados maiores.
 - [ ] Dashboard com métricas por ano/apartamento.
 - [ ] Gestão de perfis/utilizadores.
 - [ ] Histórico de alterações por registo.

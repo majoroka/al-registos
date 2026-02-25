@@ -2,6 +2,11 @@
 
 Objetivo: garantir isolamento de dados por utilizador e bloquear acessos indevidos antes de colocar a app em producao.
 
+## Estado no repositorio (fev/2026)
+
+- As migracoes `20260224152000_security_rls.sql` e `20260224153000_owner_not_null.sql` ja aplicam a base de ownership + RLS.
+- Este checklist continua util para auditoria manual em novos ambientes e validacao final pre-producao.
+
 ## 1) Modelo de ownership
 
 - [ ] Garantir coluna `owner_id uuid not null` em `apartments` e `stays`.

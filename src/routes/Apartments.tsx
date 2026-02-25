@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { listApartments } from '../data/apartments'
 import { createStay, listStays, updateStay } from '../data/stays'
 import { logError, toPublicErrorMessage } from '../lib/errors'
@@ -18,9 +18,35 @@ type GuestForm = {
   check_out: string
 }
 
+type ConsultFilters = {
+  apartmentId: string
+  year: string
+  month: string
+}
+
 const currentYear = new Date().getFullYear()
 const minYear = 2000
 const maxYear = currentYear + 1
+const filterMinYear = 2015
+const filterMaxYear = currentYear
+const monthOptions = [
+  { value: '1', label: 'Janeiro' },
+  { value: '2', label: 'Fevereiro' },
+  { value: '3', label: 'Março' },
+  { value: '4', label: 'Abril' },
+  { value: '5', label: 'Maio' },
+  { value: '6', label: 'Junho' },
+  { value: '7', label: 'Julho' },
+  { value: '8', label: 'Agosto' },
+  { value: '9', label: 'Setembro' },
+  { value: '10', label: 'Outubro' },
+  { value: '11', label: 'Novembro' },
+  { value: '12', label: 'Dezembro' },
+]
+const apartmentCardLicenseByName: Record<string, string> = {
+  'T1 - Tropical': '8168/AL',
+  'T2 - Caravela': '4668/AL',
+}
 
 const emptyForm: GuestForm = {
   guest_name: '',
@@ -33,6 +59,11 @@ const emptyForm: GuestForm = {
   check_in: '',
   check_out: '',
 }
+
+const yearFilterOptions = Array.from(
+  { length: filterMaxYear - filterMinYear + 1 },
+  (_, index) => String(filterMinYear + index),
+)
 
 function parsePositiveInteger(value: string): number | null {
   const trimmed = value.trim()
@@ -157,10 +188,22 @@ export default function Apartments() {
   const [globalSearchResults, setGlobalSearchResults] = useState<StayWithApartment[]>([])
   const [hasSearched, setHasSearched] = useState(false)
   const [searchingGlobal, setSearchingGlobal] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [consultOpen, setConsultOpen] = useState(false)
+  const [consultFilters, setConsultFilters] = useState<ConsultFilters>({
+    apartmentId: '',
+    year: '',
+    month: '',
+  })
+  const [consultResults, setConsultResults] = useState<StayWithApartment[]>([])
+  const [consultHasRun, setConsultHasRun] = useState(false)
+  const [consultLoading, setConsultLoading] = useState(false)
+  const [consultError, setConsultError] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [loadingApartments, setLoadingApartments] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const menuRef = useRef<HTMLDivElement | null>(null)
 
   const selectedApartment = useMemo(
     () => apartments.find((apartment) => apartment.id === selectedApartmentId) ?? null,
@@ -184,6 +227,21 @@ export default function Apartments() {
   useEffect(() => {
     void loadApartments()
   }, [])
+
+  useEffect(() => {
+    if (!menuOpen) return
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick)
+    }
+  }, [menuOpen])
 
   const handleSelectApartment = (apartment: Apartment) => {
     setSelectedApartmentId(apartment.id)
@@ -301,13 +359,224 @@ export default function Apartments() {
     setEditorMode('edit')
   }
 
+  const handleOpenConsult = () => {
+    setMenuOpen(false)
+    setConsultOpen(true)
+    setConsultError(null)
+  }
+
+  const handleOpenExport = () => {
+    setMenuOpen(false)
+    setNotice('Exportar será implementado no próximo passo.')
+  }
+
+  const handleConsultFilterChange = (field: keyof ConsultFilters, value: string) => {
+    setConsultFilters((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleConsult = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setConsultError(null)
+    setConsultHasRun(true)
+
+    const apartmentId = consultFilters.apartmentId
+      ? Number.parseInt(consultFilters.apartmentId, 10)
+      : null
+    const year = consultFilters.year ? Number.parseInt(consultFilters.year, 10) : null
+    const month = consultFilters.month ? Number.parseInt(consultFilters.month, 10) : null
+
+    if (consultFilters.apartmentId && (!apartmentId || apartmentId <= 0)) {
+      setConsultError('Apartamento inválido.')
+      return
+    }
+
+    if (consultFilters.year && (!year || year < filterMinYear || year > filterMaxYear)) {
+      setConsultError(`Ano inválido. Usa um valor entre ${filterMinYear} e ${filterMaxYear}.`)
+      return
+    }
+
+    if (consultFilters.month && (!month || month < 1 || month > 12)) {
+      setConsultError('Mês inválido.')
+      return
+    }
+
+    setConsultLoading(true)
+    try {
+      const baseResults = await listStays({
+        apartmentId: apartmentId ?? undefined,
+        year: year ?? undefined,
+      })
+
+      const filteredResults =
+        month === null
+          ? baseResults
+          : baseResults.filter((stay) => {
+              if (!stay.check_in) return false
+              const date = new Date(`${stay.check_in}T00:00:00`)
+              if (Number.isNaN(date.getTime())) return false
+              return date.getMonth() + 1 === month
+            })
+
+      setConsultResults(filteredResults)
+    } catch (error) {
+      logError('Erro na consulta de registos', error)
+      setConsultError(toPublicErrorMessage(error, 'Erro ao consultar registos.'))
+    } finally {
+      setConsultLoading(false)
+    }
+  }
+
+  const handleClearConsult = () => {
+    setConsultFilters({ apartmentId: '', year: '', month: '' })
+    setConsultResults([])
+    setConsultHasRun(false)
+    setConsultError(null)
+  }
+
+  const handleOpenConsultResult = (stay: StayWithApartment) => {
+    setConsultOpen(false)
+    handleOpenSearchResult(stay)
+  }
+
   return (
     <>
       <section className="workspace-shell">
-        <div className="workspace-intro">
-          <h1>Apartamentos</h1>
-          <p>Escolhe um apartamento para gerir hóspedes e registos.</p>
+        <div className="workspace-intro workspace-intro-with-menu">
+          <div>
+            <h1>Apartamentos</h1>
+            <p>Escolhe um apartamento para gerir hóspedes e registos.</p>
+          </div>
+          <div className="workspace-menu-wrap" ref={menuRef}>
+            <button
+              type="button"
+              className={`hamburger-btn ${menuOpen ? 'open' : ''}`}
+              aria-label="Abrir menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((prev) => !prev)}
+            >
+              <span />
+              <span />
+              <span />
+            </button>
+            {menuOpen && (
+              <div className="workspace-menu-dropdown" role="menu">
+                <button type="button" role="menuitem" onClick={handleOpenConsult}>
+                  Consultar
+                </button>
+                <button type="button" role="menuitem" onClick={handleOpenExport}>
+                  Exportar
+                </button>
+              </div>
+            )}
+          </div>
         </div>
+
+        {consultOpen && (
+          <div className="consult-panel">
+            <div className="consult-panel-header">
+              <div>
+                <h2>Consultar registos</h2>
+                <p>Filtra por apartamento, ano e mês.</p>
+              </div>
+              <button
+                type="button"
+                className="consult-close-btn"
+                onClick={() => setConsultOpen(false)}
+              >
+                Fechar
+              </button>
+            </div>
+
+            <form className="consult-form" onSubmit={handleConsult}>
+              <label>
+                Apartamento
+                <select
+                  className="filter-select"
+                  value={consultFilters.apartmentId}
+                  onChange={(event) =>
+                    handleConsultFilterChange('apartmentId', event.target.value)
+                  }
+                >
+                  <option value="">Todos</option>
+                  {apartments.map((apartment) => (
+                    <option key={`filter-apartment-${apartment.id}`} value={String(apartment.id)}>
+                      {apartment.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Ano
+                <select
+                  className="filter-select"
+                  value={consultFilters.year}
+                  onChange={(event) => handleConsultFilterChange('year', event.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {yearFilterOptions.map((yearOption) => (
+                    <option key={yearOption} value={yearOption}>
+                      {yearOption}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Mês
+                <select
+                  className="filter-select"
+                  value={consultFilters.month}
+                  onChange={(event) => handleConsultFilterChange('month', event.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {monthOptions.map((monthOption) => (
+                    <option key={monthOption.value} value={monthOption.value}>
+                      {monthOption.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="consult-actions">
+                <button type="submit" disabled={consultLoading}>
+                  {consultLoading ? 'A consultar...' : 'Consultar'}
+                </button>
+                <button type="button" className="clear-btn" onClick={handleClearConsult}>
+                  Limpar
+                </button>
+              </div>
+            </form>
+
+            {consultError && <p className="error">{consultError}</p>}
+
+            {consultHasRun && (
+              <div className="consult-results">
+                <h3>Resultado da consulta</h3>
+                {consultLoading ? (
+                  <p>A consultar...</p>
+                ) : consultResults.length === 0 ? (
+                  <p className="empty-state">Sem registos para os filtros aplicados.</p>
+                ) : (
+                  <ul>
+                    {consultResults.map((stay) => (
+                      <li key={`consult-${stay.id}`}>
+                        <div>
+                          <strong>{stay.guest_name}</strong>
+                          <p>{stay.apartment?.name ?? 'Apartamento desconhecido'}</p>
+                          <p>{stay.year}</p>
+                        </div>
+                        <button type="button" onClick={() => handleOpenConsultResult(stay)}>
+                          Abrir
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {loadingApartments ? (
           <p>A carregar apartamentos...</p>
@@ -327,7 +596,14 @@ export default function Apartments() {
                 }}
               >
                 <span className="tile-label">CRIAR REGISTO</span>
-                <strong>{apartment.name}</strong>
+                <strong>
+                  {apartment.name}
+                  {apartmentCardLicenseByName[apartment.name] && (
+                    <span className="tile-license">
+                      ({apartmentCardLicenseByName[apartment.name]})
+                    </span>
+                  )}
+                </strong>
               </button>
             ))}
           </div>

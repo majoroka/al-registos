@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Aplicação web para registo de hóspedes e estadias de Alojamento Local, com autenticação e persistência em Supabase.
+Aplicação web para registo e consulta de hóspedes em Alojamento Local, com autenticação e persistência em Supabase.
 
 ## Stack
 
@@ -10,64 +10,79 @@ Aplicação web para registo de hóspedes e estadias de Alojamento Local, com au
 - Router: `react-router-dom`
 - Backend-as-a-Service: Supabase (Auth + Postgres + RLS)
 
-## Componentes principais
+## Rotas e layout
 
 - `src/main.tsx`
   - Inicializa React, `BrowserRouter` com `basename` e `AuthProvider`.
+- `src/App.tsx`
+  - Define rotas (`/login`, `/auth/callback`, `/apartments`).
+  - `/stays` redireciona para `/apartments`.
+  - Renderiza header global (`AL Registo` + logout) quando existe sessão.
+- `src/components/ProtectedRoute.tsx`
+  - Exige sessão para aceder às rotas privadas.
+
+## Autenticação
+
 - `src/context/AuthContext.tsx`
   - Mantém estado de sessão (`session`, `loading`) e `signOut`.
-- `src/App.tsx`
-  - Define rotas e layout base.
-- `src/components/ProtectedRoute.tsx`
-  - Restringe acesso a rotas autenticadas.
 - `src/routes/Login.tsx`
-  - Login por email/password e GitHub OAuth.
+  - Login por email/password.
+  - Login por GitHub OAuth (`signInWithOAuth`).
 - `src/routes/AuthCallback.tsx`
-  - Finaliza callback OAuth e redireciona para `/apartments`.
+  - Finaliza callback OAuth (`exchangeCodeForSession`) e redireciona para `/apartments`.
+
+## Ecrã principal (`/apartments`)
+
 - `src/routes/Apartments.tsx`
-  - CRUD básico de apartamentos.
-- `src/routes/Stays.tsx`
-  - CRUD de registos/estadias com filtros por ano/apartamento.
-- `src/data/*.ts`
-  - Queries e mutações Supabase para tabelas `apartments` e `stays`.
+  - Cards de apartamentos com ação direta de criação de registo:
+    - `T1 - Tropical (8168/AL)`
+    - `T2 - Caravela (4668/AL)`
+  - Formulário modal de criação/edição de registo.
+  - Pesquisa global por todos os registos.
+  - Menu hamburger no cabeçalho com:
+    - `Consultar` (filtros por apartamento, ano, mês)
+    - `Exportar` (placeholder)
 
-## Fluxos
+## Camada de dados
 
-## 1) Arranque e sessão
+- `src/lib/supabase.ts`
+  - Cliente Supabase inicializado a partir de `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
+- `src/data/apartments.ts`
+  - Leitura de apartamentos (`listApartments`).
+- `src/data/stays.ts`
+  - CRUD de estadias (`listStays`, `createStay`, `updateStay`, `deleteStay`).
 
-1. `AuthProvider` consulta sessão atual no Supabase.
-2. App renderiza rotas.
-3. Rotas privadas exigem sessão válida.
-
-## 2) Login email/password
-
-1. Utilizador submete formulário.
-2. `supabase.auth.signInWithPassword`.
-3. Ao receber sessão, redireciona para `/apartments`.
-
-## 3) Login GitHub OAuth
-
-1. Utilizador clica `Entrar com GitHub`.
-2. `signInWithOAuth` redireciona para GitHub.
-3. Retorno em `/auth/callback`.
-4. `exchangeCodeForSession` e redirecionamento para `/apartments`.
-
-## Modelo de dados esperado
+## Modelo de dados
 
 - `apartments`
   - `id`, `name`, `owner_id`, `created_at`
 - `stays`
-  - `id`, `guest_*`, `apartment_id`, `people_count`, `nights_count`, `rating`, `year`, `owner_id`, `created_at`
+  - `id`, `guest_name`, `guest_phone`, `guest_email`, `guest_address`
+  - `apartment_id`, `people_count`, `nights_count`
+  - `linen`, `rating`, `notes`
+  - `check_in`, `check_out`, `year`
+  - `owner_id`, `created_at`
 
-As migrações de segurança estão em `supabase/migrations/`.
+## Regras aplicadas no frontend
 
-## Segurança
+- `check-out` deve ser posterior a `check-in`.
+- `nights_count` é calculado pelas datas.
+- `year` é derivado do `check-in`.
+- `linen` limitado a `Com Roupa` ou `Sem Roupa`.
 
-- Variáveis sensíveis no frontend limitadas a `anon key`.
+## Base de dados e segurança
+
+- Migrações versionadas em `supabase/migrations/`.
 - RLS com isolamento por `owner_id`.
-- Policies de leitura/escrita para utilizador autenticado.
+- `owner_id` obrigatório em `apartments` e `stays`.
+- Trigger para sincronizar campos derivados (`nights_count`, `year`) quando há datas.
 
-## Riscos atuais
+## Estado atual e riscos
 
-- Falta de testes automatizados.
-- Migrações ainda precisam ser aplicadas no novo projeto Supabase.
+- Estado:
+  - fluxo principal e consultas já operacionais;
+  - importação inicial de histórico executada via migração SQL.
+- Riscos pendentes:
+  - ausência de testes automatizados;
+  - exportação ainda por implementar;
+  - registos históricos ainda precisam de preenchimento de `check-in/check-out`.
