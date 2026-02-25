@@ -94,6 +94,13 @@ function calculateNights(checkIn: string, checkOut: string): number | null {
   return diffDays
 }
 
+function parseDateSafe(value: string | null | undefined): Date | null {
+  if (!value) return null
+  const parsed = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed
+}
+
 function toGuestForm(stay: StayWithApartment): GuestForm {
   return {
     guest_name: stay.guest_name,
@@ -105,6 +112,15 @@ function toGuestForm(stay: StayWithApartment): GuestForm {
     notes: stay.notes ?? '',
     check_in: stay.check_in ?? '',
     check_out: stay.check_out ?? '',
+  }
+}
+
+function toDuplicateGuestForm(stay: StayWithApartment): GuestForm {
+  const source = toGuestForm(stay)
+  return {
+    ...source,
+    check_in: '',
+    check_out: '',
   }
 }
 
@@ -199,6 +215,11 @@ export default function Apartments() {
   const [consultHasRun, setConsultHasRun] = useState(false)
   const [consultLoading, setConsultLoading] = useState(false)
   const [consultError, setConsultError] = useState<string | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState<string | null>(null)
+  const [historyReference, setHistoryReference] = useState('')
+  const [historyResults, setHistoryResults] = useState<StayWithApartment[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [loadingApartments, setLoadingApartments] = useState(true)
@@ -351,12 +372,76 @@ export default function Apartments() {
   }
 
   const handleOpenSearchResult = (stay: StayWithApartment) => {
+    setHistoryOpen(false)
     setErrorMessage(null)
     setNotice(null)
     setSelectedStayId(stay.id)
     setSelectedApartmentId(stay.apartment_id)
     setForm(toGuestForm(stay))
     setEditorMode('edit')
+  }
+
+  const handleCreateFromExisting = (stay: StayWithApartment) => {
+    setHistoryOpen(false)
+    setErrorMessage(null)
+    setNotice(null)
+    setSelectedStayId(null)
+    setSelectedApartmentId(stay.apartment_id)
+    setForm(toDuplicateGuestForm(stay))
+    setEditorMode('create')
+  }
+
+  const handleOpenCustomerHistory = async (stay: StayWithApartment) => {
+    const phone = stay.guest_phone.trim()
+    const email = stay.guest_email.trim().toLowerCase()
+    const name = stay.guest_name.trim().toLowerCase()
+
+    if (!phone && !email && !name) {
+      setHistoryError('Sem dados suficientes para consultar histórico.')
+      setHistoryOpen(true)
+      return
+    }
+
+    setHistoryReference(phone || email || stay.guest_name)
+    setHistoryError(null)
+    setHistoryOpen(true)
+    setHistoryLoading(true)
+
+    try {
+      const allStays = await listStays({})
+      const matches = allStays
+        .filter((item) => {
+          const itemPhone = item.guest_phone.trim()
+          const itemEmail = item.guest_email.trim().toLowerCase()
+          const itemName = item.guest_name.trim().toLowerCase()
+
+          const phoneMatch = phone && itemPhone === phone
+          const emailMatch = email && itemEmail === email
+          const fallbackNameMatch = !phone && !email && name && itemName === name
+
+          return phoneMatch || emailMatch || fallbackNameMatch
+        })
+        .sort((left, right) => {
+          const leftTime = left.check_in
+            ? new Date(`${left.check_in}T00:00:00`).getTime()
+            : Number.NEGATIVE_INFINITY
+          const rightTime = right.check_in
+            ? new Date(`${right.check_in}T00:00:00`).getTime()
+            : Number.NEGATIVE_INFINITY
+
+          if (leftTime !== rightTime) return rightTime - leftTime
+          if (left.year !== right.year) return right.year - left.year
+          return right.id - left.id
+        })
+
+      setHistoryResults(matches)
+    } catch (error) {
+      logError('Erro ao consultar histórico do cliente', error)
+      setHistoryError(toPublicErrorMessage(error, 'Erro ao consultar histórico.'))
+      setHistoryResults([])
+    } finally {
+      setHistoryLoading(false)
+    }
   }
 
   const handleOpenConsult = () => {
@@ -404,18 +489,29 @@ export default function Apartments() {
     try {
       const baseResults = await listStays({
         apartmentId: apartmentId ?? undefined,
-        year: year ?? undefined,
       })
 
-      const filteredResults =
-        month === null
-          ? baseResults
-          : baseResults.filter((stay) => {
-              if (!stay.check_in) return false
-              const date = new Date(`${stay.check_in}T00:00:00`)
-              if (Number.isNaN(date.getTime())) return false
-              return date.getMonth() + 1 === month
-            })
+      const filteredResults = baseResults.filter((stay) => {
+        const checkInDate = parseDateSafe(stay.check_in)
+        const checkOutDate = parseDateSafe(stay.check_out)
+        const yearSource = checkInDate ?? checkOutDate
+
+        const yearMatch =
+          year === null
+            ? true
+            : yearSource
+              ? yearSource.getFullYear() === year
+              : stay.year === year
+
+        const monthMatch =
+          month === null
+            ? true
+            : [checkInDate, checkOutDate].some(
+                (dateCandidate) => dateCandidate !== null && dateCandidate.getMonth() + 1 === month,
+              )
+
+        return yearMatch && monthMatch
+      })
 
       setConsultResults(filteredResults)
     } catch (error) {
@@ -566,9 +662,27 @@ export default function Apartments() {
                           <p>{stay.apartment?.name ?? 'Apartamento desconhecido'}</p>
                           <p>{stay.year}</p>
                         </div>
-                        <button type="button" onClick={() => handleOpenConsultResult(stay)}>
-                          Abrir
-                        </button>
+                        <div className="result-actions">
+                          <button type="button" onClick={() => handleOpenConsultResult(stay)}>
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => handleCreateFromExisting(stay)}
+                          >
+                            Criar
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => {
+                              void handleOpenCustomerHistory(stay)
+                            }}
+                          >
+                            Consultar
+                          </button>
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -650,14 +764,34 @@ export default function Apartments() {
                       <p>{stay.apartment?.name ?? 'Apartamento desconhecido'}</p>
                       <p>{stay.check_in ?? '-'} → {stay.check_out ?? '-'}</p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleOpenSearchResult(stay)
-                      }}
-                    >
-                      Abrir
-                    </button>
+                    <div className="result-actions">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleOpenSearchResult(stay)
+                        }}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => {
+                          handleCreateFromExisting(stay)
+                        }}
+                      >
+                        Criar
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => {
+                          void handleOpenCustomerHistory(stay)
+                        }}
+                      >
+                        Consultar
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -665,6 +799,55 @@ export default function Apartments() {
           </div>
         )}
       </section>
+      {historyOpen && (
+        <div className="editor-backdrop" onClick={() => setHistoryOpen(false)}>
+          <section className="history-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="history-header">
+              <div>
+                <h3>Histórico do cliente</h3>
+                <p>{historyReference}</p>
+              </div>
+              <button type="button" onClick={() => setHistoryOpen(false)}>
+                Fechar
+              </button>
+            </div>
+
+            {historyError && <p className="error">{historyError}</p>}
+
+            {historyLoading ? (
+              <p>A consultar histórico...</p>
+            ) : historyResults.length === 0 ? (
+              <p className="empty-state">Sem histórico para este cliente.</p>
+            ) : (
+              <ul className="history-list">
+                {historyResults.map((stay) => (
+                  <li key={`history-${stay.id}`}>
+                    <div>
+                      <strong>{stay.guest_name}</strong>
+                      <p>{stay.apartment?.name ?? 'Apartamento desconhecido'}</p>
+                      <p>
+                        {stay.check_in ?? '-'} → {stay.check_out ?? '-'} ({stay.year})
+                      </p>
+                    </div>
+                    <div className="result-actions">
+                      <button type="button" onClick={() => handleOpenSearchResult(stay)}>
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => handleCreateFromExisting(stay)}
+                      >
+                        Criar
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+      )}
       {notice && <p className="notice">{notice}</p>}
       {errorMessage && !editorMode && <p className="error">{errorMessage}</p>}
 

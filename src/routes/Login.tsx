@@ -11,7 +11,6 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [passwordLoading, setPasswordLoading] = useState(false)
-  const [oauthLoading, setOauthLoading] = useState(false)
 
   useEffect(() => {
     if (session) {
@@ -48,34 +47,10 @@ export default function Login() {
     setPasswordLoading(false)
   }
 
-  const handleGitHubLogin = async () => {
-    setErrorMessage(null)
-    setOauthLoading(true)
-
-    const redirectPath = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/auth/callback`
-    const redirectTo = new URL(redirectPath, window.location.origin).toString()
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'github',
-      options: { redirectTo },
-    })
-
-    if (error) {
-      logError('Erro no login com GitHub', error)
-      setErrorMessage(
-        toPublicErrorMessage(error, 'Não foi possível iniciar sessão com GitHub.'),
-      )
-      setOauthLoading(false)
-    }
-  }
-
   return (
     <section>
       <h1>Login</h1>
-      <p>Entra com GitHub ou usa o teu email e password.</p>
-
-      <button type="button" onClick={handleGitHubLogin} disabled={oauthLoading || passwordLoading}>
-        {oauthLoading ? 'A redirecionar para GitHub...' : 'Entrar com GitHub'}
-      </button>
+      <p>Entra com o teu email e password.</p>
 
       <form onSubmit={handleSubmit}>
         <label>
@@ -100,7 +75,7 @@ export default function Login() {
           />
         </label>
 
-        <button type="submit" disabled={passwordLoading || oauthLoading}>
+        <button type="submit" disabled={passwordLoading}>
           {passwordLoading ? 'A entrar...' : 'Entrar com email'}
         </button>
       </form>
