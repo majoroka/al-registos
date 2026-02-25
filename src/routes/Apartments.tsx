@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import DatePickerInput from '../components/DatePickerInput'
 import { listApartments } from '../data/apartments'
 import { createStay, listStays, updateStay } from '../data/stays'
 import { logError, toPublicErrorMessage } from '../lib/errors'
@@ -63,7 +64,7 @@ const emptyForm: GuestForm = {
 const yearFilterOptions = Array.from(
   { length: filterMaxYear - filterMinYear + 1 },
   (_, index) => String(filterMinYear + index),
-)
+).reverse()
 
 function parsePositiveInteger(value: string): number | null {
   const trimmed = value.trim()
@@ -99,6 +100,21 @@ function parseDateSafe(value: string | null | undefined): Date | null {
   const parsed = new Date(`${value}T00:00:00`)
   if (Number.isNaN(parsed.getTime())) return null
   return parsed
+}
+
+function toIsoDate(date: Date): string {
+  const year = String(date.getFullYear())
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getNextDayIso(value: string): string | undefined {
+  const parsed = parseDateSafe(value)
+  if (!parsed) return undefined
+  const next = new Date(parsed)
+  next.setDate(parsed.getDate() + 1)
+  return toIsoDate(next)
 }
 
 function toGuestForm(stay: StayWithApartment): GuestForm {
@@ -230,6 +246,7 @@ export default function Apartments() {
     () => apartments.find((apartment) => apartment.id === selectedApartmentId) ?? null,
     [apartments, selectedApartmentId],
   )
+  const checkOutMin = useMemo(() => getNextDayIso(form.check_in), [form.check_in])
 
   const loadApartments = async () => {
     setLoadingApartments(true)
@@ -917,28 +934,31 @@ export default function Apartments() {
                   required
                 />
               </label>
-              <label>
-                Check-in
-                <input
-                  type="date"
-                  value={form.check_in}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, check_in: event.target.value }))
-                  }
-                  required
-                />
-              </label>
-              <label>
-                Check-out
-                <input
-                  type="date"
-                  value={form.check_out}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, check_out: event.target.value }))
-                  }
-                  required
-                />
-              </label>
+              <DatePickerInput
+                label="Check-in"
+                value={form.check_in}
+                onChange={(value) => {
+                  setForm((prev) => {
+                    const nextMin = getNextDayIso(value)
+                    const shouldClearCheckOut =
+                      !!prev.check_out && !!nextMin && prev.check_out < nextMin
+
+                    return {
+                      ...prev,
+                      check_in: value,
+                      check_out: shouldClearCheckOut ? '' : prev.check_out,
+                    }
+                  })
+                }}
+              />
+              <DatePickerInput
+                label="Check-out"
+                value={form.check_out}
+                min={checkOutMin}
+                onChange={(value) =>
+                  setForm((prev) => ({ ...prev, check_out: value }))
+                }
+              />
               <label>
                 Nº Pessoas
                 <input
