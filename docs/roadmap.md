@@ -2,53 +2,62 @@
 
 ## Visão
 
-Concluir o MVP de registo de AL com segurança mínima de produção, qualidade de código estável e base pronta para evoluir.
+Consolidar o MVP de registo AL com operação diária estável, segurança consistente e documentação suficiente para manutenção.
 
-## Fase 0 - Imediato (agora)
+## Fase 0 - Base funcional (concluída)
 
 - [x] Login por email/password.
-- [x] Login por GitHub OAuth.
 - [x] Rotas protegidas.
 - [x] Fluxo principal em `/apartments` (cards -> criar registo).
-- [x] CRUD base de estadias.
+- [x] CRUD de estadias.
 - [x] Pesquisa global com `Pesquisar` e `Limpar`.
-- [x] Menu hamburger com `Consultar`.
-- [x] Filtros de consulta por apartamento, ano e mês.
-- [x] Documentação de setup e checklist de segurança.
-- [x] Criar migração inicial de schema (tabelas e FKs) para projetos novos.
-- [x] Aplicar migrações no projeto Supabase ativo.
-- [x] Importar histórico inicial (`clientes_AL.csv`) via migração (43 registos).
-- [x] Corrigir erro de tipagem em `src/data/stays.ts`.
+- [x] Modal de consulta completa do registo.
+- [x] Eliminação com confirmação em modal custom.
+- [x] Formulário com `Entrada/Saída` e cálculo automático de noites.
+- [x] Menu hamburger com 4 áreas:
+  - `Consultar`
+  - `Visualizar`
+  - `Exportar`
+  - `Imprimir`
+- [x] Exportação PDF e impressão com layout dedicado.
+- [x] Migrações de schema + RLS aplicadas.
+- [x] Importação histórica inicial (`clientes_AL.csv`, 43 registos).
+- [x] Deploy GitHub Pages configurado.
 
-## Fase 1 - Estabilização (curto prazo)
+## Fase 1 - Estabilização UX/UI (curto prazo)
 
-- [ ] Linting e formatação (`eslint` + `prettier`).
-- [ ] Testes unitários básicos para validações e helpers.
-- [ ] Uniformizar estados de loading/empty/error entre pesquisa global e consulta.
-- [ ] Melhorar validação visual de campos no formulário (mensagens por campo).
-- [ ] Fechar pequenos ajustes de alinhamento/responsividade no painel `Consultar`.
+- [ ] Afinar design do calendário no documento de saída (contraste e legibilidade).
+- [ ] Rever densidade tipográfica do PDF para diferentes volumes mensais.
+- [ ] Ajustar consistência visual dos estados `loading/empty/error` entre painéis.
+- [ ] Validar responsividade final dos painéis de menu em mobile.
+- [ ] Pequena modularização do `Apartments.tsx` (extração de helpers de exportação).
 
-## Fase 2 - Segurança e confiabilidade
+## Fase 2 - Qualidade e manutenção
 
-- [ ] Validar RLS com testes manuais de multi-utilizador.
-- [x] Garantir `owner_id not null` após backfill/migração.
-- [x] Revisão base de grants `anon` vs `authenticated` nas migrações.
-- [ ] Logs de auditoria básicos para operações críticas.
+- [ ] Configurar `eslint` + `prettier`.
+- [ ] Introduzir testes unitários para validações e helpers de datas.
+- [ ] Criar testes de fluxo mínimo para filtros e exportação.
+- [ ] Definir convenções de versionamento e changelog.
 
-## Fase 3 - Produto (médio prazo)
+## Fase 3 - Segurança e operação
 
-- [x] Pesquisa de registos (global + consulta filtrada).
-- [ ] Exportação (`Exportar`) no menu hamburger.
-- [ ] Preencher `check-in/check-out` no histórico importado.
-- [ ] Paginação para listas de resultados maiores.
-- [ ] Dashboard com métricas por ano/apartamento.
-- [ ] Gestão de perfis/utilizadores.
+- [ ] Executar auditoria manual multi-utilizador RLS.
+- [ ] Definir processo de rotação de credenciais/tokens.
+- [ ] Documentar rotina de backup e recuperação.
+- [ ] Rever permissões e políticas após cada nova migração.
+
+## Fase 4 - Evolução de produto
+
+- [ ] Dashboard com métricas por apartamento/ano/mês.
+- [ ] Paginação para listas maiores.
 - [ ] Histórico de alterações por registo.
+- [ ] Gestão de utilizadores/perfis (quando necessário).
+- [ ] Estratégia de importação incremental de históricos futuros.
 
 ## Critérios de pronto para produção (v1)
 
 - [ ] `npm run typecheck` sem erros.
-- [ ] Migrações versionadas e aplicadas no ambiente alvo.
-- [ ] RLS validado para leitura/escrita entre utilizadores diferentes.
-- [ ] Fluxo de autenticação testado em navegador privado.
-- [ ] Backups e plano de recuperação documentados.
+- [ ] Migrações aplicadas e verificadas no ambiente alvo.
+- [ ] RLS validado em cenário com dois utilizadores distintos.
+- [ ] Fluxo completo (`Consultar`/`Visualizar`/`Exportar`/`Imprimir`) validado em browser alvo.
+- [ ] Processo operacional documentado (backup, rollback, suporte).

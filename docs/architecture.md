@@ -2,55 +2,93 @@
 
 ## Objetivo
 
-Aplicação web para registo e consulta de hóspedes em Alojamento Local, com autenticação e persistência em Supabase.
+Aplicação web para registo, consulta e emissão documental de estadias de Alojamento Local, com isolamento de dados por utilizador em Supabase.
 
 ## Stack
 
 - Frontend: React 18 + TypeScript + Vite
 - Router: `react-router-dom`
-- Backend-as-a-Service: Supabase (Auth + Postgres + RLS)
+- BaaS: Supabase (`Auth`, `Postgres`, `RLS`)
+- Geração de PDF no browser: `html2canvas` + `jspdf`
 
 ## Rotas e layout
 
 - `src/main.tsx`
-  - Inicializa React, `BrowserRouter` com `basename` e `AuthProvider`.
+  - Inicialização React, `BrowserRouter` com `basename` e `AuthProvider`.
 - `src/App.tsx`
-  - Define rotas (`/login`, `/auth/callback`, `/apartments`).
+  - Rotas: `/login`, `/auth/callback`, `/apartments`.
   - `/stays` redireciona para `/apartments`.
-  - Renderiza header global (`AL Registo` + logout) quando existe sessão.
+  - Header global (`AL Registo` + logout) quando existe sessão.
 - `src/components/ProtectedRoute.tsx`
-  - Exige sessão para aceder às rotas privadas.
+  - Bloqueia acesso sem sessão.
 
 ## Autenticação
 
 - `src/context/AuthContext.tsx`
-  - Mantém estado de sessão (`session`, `loading`) e `signOut`.
+  - Estado de sessão (`session`, `loading`) e `signOut`.
 - `src/routes/Login.tsx`
   - Login por email/password.
-  - Login por GitHub OAuth (`signInWithOAuth`).
 - `src/routes/AuthCallback.tsx`
-  - Finaliza callback OAuth (`exchangeCodeForSession`) e redireciona para `/apartments`.
+  - Rota de callback OAuth (compatibilidade com projetos que ativem provider externo).
 
 ## Ecrã principal (`/apartments`)
 
 - `src/routes/Apartments.tsx`
-  - Cards de apartamentos com ação direta de criação de registo:
+  - Cards fixos de apartamentos:
     - `T1 - Tropical (8168/AL)`
     - `T2 - Caravela (4668/AL)`
-  - Formulário modal de criação/edição de registo.
-  - Pesquisa global por todos os registos.
-  - Menu hamburger no cabeçalho com:
-    - `Consultar` (filtros por apartamento, ano, mês)
-    - `Exportar` (placeholder)
+  - Modal de criação/edição de registo.
+  - Pesquisa global sempre visível.
+  - Modal de consulta de registo completo.
+  - Modal de confirmação de eliminação.
+  - Menu hamburger com 4 modos:
+    - `Consultar`
+    - `Visualizar`
+    - `Exportar`
+    - `Imprimir`
+
+## Painéis operacionais
+
+- `Consultar`
+  - Filtros por apartamento, ano, mês.
+  - Resultado em lista acionável (`Editar`, `Criar`, `Consultar`, `Eliminar`).
+- `Visualizar`
+  - Mesmo layout de filtros.
+  - Agrupamento visual por ano e mês para revisão em ecrã.
+- `Exportar`
+  - Mesmo layout de filtros.
+  - Requer ano e mês.
+  - Abre diálogo de nome e gera PDF no browser.
+- `Imprimir`
+  - Mesmo layout de filtros.
+  - Requer ano e mês.
+  - Abre janela de impressão.
+
+## Documento de saída (PDF/Impressão)
+
+- Construído em `buildExportDocumentHtml`.
+- Estrutura:
+  - cabeçalho do mês/ano;
+  - calendário mensal com marcação de reservas;
+  - lista de registos em cartões.
+- Regras visuais:
+  - cores por reserva para identificação;
+  - dia com saída+entrada pode ter marcação combinada;
+  - cada registo mostra um círculo de referência de cor.
+- Pipeline PDF:
+  - HTML renderizado em `iframe`;
+  - rasterização via `html2canvas`;
+  - composição A4 com `jspdf`;
+  - gravação via `showSaveFilePicker` quando disponível, com fallback para download.
 
 ## Camada de dados
 
 - `src/lib/supabase.ts`
-  - Cliente Supabase inicializado a partir de `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
+  - Cliente Supabase com `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
 - `src/data/apartments.ts`
-  - Leitura de apartamentos (`listApartments`).
+  - `listApartments`.
 - `src/data/stays.ts`
-  - CRUD de estadias (`listStays`, `createStay`, `updateStay`, `deleteStay`).
+  - CRUD: `listStays`, `createStay`, `updateStay`, `deleteStay`.
 
 ## Modelo de dados
 
@@ -63,26 +101,22 @@ Aplicação web para registo e consulta de hóspedes em Alojamento Local, com au
   - `check_in`, `check_out`, `year`
   - `owner_id`, `created_at`
 
-## Regras aplicadas no frontend
+## Regras de frontend
 
 - `check-out` deve ser posterior a `check-in`.
-- `nights_count` é calculado pelas datas.
-- `year` é derivado do `check-in`.
+- `nights_count` derivado automaticamente das datas.
+- `year` derivado de `check-in`.
 - `linen` limitado a `Com Roupa` ou `Sem Roupa`.
 
-## Base de dados e segurança
+## Segurança e persistência
 
-- Migrações versionadas em `supabase/migrations/`.
-- RLS com isolamento por `owner_id`.
+- Migrações em `supabase/migrations`.
+- RLS por `owner_id`.
 - `owner_id` obrigatório em `apartments` e `stays`.
-- Trigger para sincronizar campos derivados (`nights_count`, `year`) quando há datas.
+- Trigger para sincronização de campos derivados (`nights_count`, `year`) a partir de datas.
 
-## Estado atual e riscos
+## Riscos atuais
 
-- Estado:
-  - fluxo principal e consultas já operacionais;
-  - importação inicial de histórico executada via migração SQL.
-- Riscos pendentes:
-  - ausência de testes automatizados;
-  - exportação ainda por implementar;
-  - registos históricos ainda precisam de preenchimento de `check-in/check-out`.
+- Sem suite de testes automatizados.
+- Muita lógica concentrada em `src/routes/Apartments.tsx` (candidato a modularização).
+- Exportação visual ainda em iteração de design para maximizar legibilidade/contraste.

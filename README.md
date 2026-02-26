@@ -1,31 +1,54 @@
 # AL Registo
 
-Frontend em React + Vite + TypeScript para registo de visitantes de Alojamento Local, com Supabase (Auth + Postgres).
+Frontend em React + Vite + TypeScript para registo de hóspedes de Alojamento Local, com Supabase (Auth + Postgres + RLS).
 
 ## Estado atual
 
-Projeto em fase inicial, já com funcionalidades nucleares operacionais:
+Projeto em fase inicial, mas com fluxo operacional completo para uso diário:
 
-- autenticação por email/password e GitHub OAuth;
-- proteção de rotas no frontend;
-- ecrã principal orientado a 2 apartamentos (cards de criação rápida);
-- criação/edição de registos em modal;
+- login por email/password;
+- rotas protegidas no frontend;
+- ecrã principal orientado a 2 apartamentos;
+- criação, edição, consulta e eliminação de registos;
 - pesquisa global por todos os apartamentos;
-- menu hamburger com item `Consultar` (filtros por apartamento, ano e mês);
-- esquema e segurança Supabase aplicados por migrações;
-- importação inicial de 43 registos históricos via migração SQL.
+- menu hamburger com 4 painéis:
+  - `Consultar`
+  - `Visualizar`
+  - `Exportar`
+  - `Imprimir`
+- exportação em PDF com escolha de nome e gravação (com fallback por browser);
+- impressão com layout dedicado;
+- calendário mensal no documento de saída com marcação visual de reservas;
+- migrações Supabase aplicadas e importação inicial (43 registos).
 
-## Fluxo atual (`/apartments`)
+## Fluxo principal (`/apartments`)
 
 - Cards:
   - `T1 - Tropical (8168/AL)`
   - `T2 - Caravela (4668/AL)`
-- Ao clicar num card, abre diretamente o formulário de criação de registo.
-- O formulário inclui `check-in` e `check-out` (datas), cálculo automático de noites, `Nº Pessoas`, `Roupa` (`Com Roupa`/`Sem Roupa`) e notas.
-- A pesquisa global fica sempre visível e permite abrir um registo para edição.
-- O menu hamburger (canto superior direito) tem:
-  - `Consultar`: painel de filtros por apartamento/ano/mês;
-  - `Exportar`: reservado para implementação posterior.
+- Ao clicar num card, abre o formulário de criação de registo.
+- Formulário com:
+  - `Entrada / Saída` por seletor de datas (range);
+  - cálculo automático de noites;
+  - `Nº Pessoas`, `Roupa` (`Com Roupa`/`Sem Roupa`) e `Notas`.
+- Pesquisa global sempre visível.
+- Ações por registo: `Editar`, `Criar` (duplicar), `Consultar`, `Eliminar`.
+- Eliminação com confirmação em modal custom.
+
+## Painéis do menu
+
+- `Consultar`:
+  - filtros por apartamento, ano e mês;
+  - lista de resultados com ações.
+- `Visualizar`:
+  - mesmos filtros;
+  - apresentação agrupada por ano/mês para revisão em ecrã.
+- `Exportar`:
+  - mesmos filtros;
+  - exporta PDF (ano e mês obrigatórios).
+- `Imprimir`:
+  - mesmos filtros;
+  - abre janela de impressão com o mesmo layout base do PDF.
 
 ## Arranque rápido
 
@@ -54,7 +77,7 @@ VITE_SUPABASE_ANON_KEY=coloca-aqui-a-chave-anon
 npm run dev
 ```
 
-> Usa apenas a `anon key` do Supabase no frontend.
+> No frontend usa apenas a `anon key`.
 
 ## Scripts
 
@@ -69,9 +92,10 @@ npm run dev
 - `src/lib/supabase.ts` cliente Supabase.
 - `src/context/AuthContext.tsx` sessão e logout.
 - `src/components/ProtectedRoute.tsx` proteção de rotas.
-- `src/routes/` rotas da aplicação (`login`, `auth/callback`, `apartments`).
+- `src/components/DatePickerInput.tsx` seletor de datas (range).
+- `src/routes/` rotas da aplicação.
 - `src/data/` camada de acesso a dados.
-- `supabase/migrations/` migrações SQL versionadas.
+- `supabase/migrations/` migrações SQL.
 
 ## Migrações incluídas
 
@@ -88,18 +112,17 @@ npm run dev
 - Roadmap: `docs/roadmap.md`
 - Setup Supabase: `docs/supabase-setup.md`
 - Checklist RLS: `docs/supabase-rls-checklist.md`
-- Migrações: `supabase/migrations/`
 
 ## Deploy em GitHub Pages
 
-Deploy automático configurado via GitHub Actions em `.github/workflows/deploy-pages.yml`.
+Deploy automático via GitHub Actions em `.github/workflows/deploy-pages.yml`.
 
-- Branch de deploy: `main`
-- Base Vite: `"/al-registos/"` (nome atual do repositório)
-- Inclui fallback SPA (`dist/404.html`) para rotas como `/auth/callback`.
+- branch de deploy: `main`;
+- base Vite: `"/al-registos/"`;
+- fallback SPA: `dist/404.html`.
 
-Para confirmar/publicar no GitHub:
+Checklist de ativação:
 
 1. `Settings -> Pages`
-2. Em `Build and deployment`, selecionar `Source: GitHub Actions`.
-3. Fazer push para `main` e verificar o workflow `Deploy GitHub Pages` em `Actions`.
+1. Em `Build and deployment`, selecionar `Source: GitHub Actions`
+1. Fazer push para `main` e verificar workflow `Deploy GitHub Pages`
