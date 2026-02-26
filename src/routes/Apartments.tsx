@@ -842,11 +842,42 @@ export default function Apartments() {
               <ul className="history-list">
                 {historyResults.map((stay) => (
                   <li key={`history-${stay.id}`}>
-                    <div>
+                    <div className="history-details">
                       <strong>{stay.guest_name}</strong>
-                      <p>{stay.apartment?.name ?? 'Apartamento desconhecido'}</p>
                       <p>
-                        {stay.check_in ?? '-'} → {stay.check_out ?? '-'} ({stay.year})
+                        <span>Apartamento:</span> {stay.apartment?.name ?? 'Apartamento desconhecido'}
+                      </p>
+                      <p>
+                        <span>Entrada:</span> {stay.check_in ?? '-'}
+                      </p>
+                      <p>
+                        <span>Saída:</span> {stay.check_out ?? '-'}
+                      </p>
+                      <p>
+                        <span>Noites:</span>{' '}
+                        {calculateNights(stay.check_in ?? '', stay.check_out ?? '') ??
+                          stay.nights_count}
+                      </p>
+                      <p>
+                        <span>Nº Pessoas:</span> {stay.people_count}
+                      </p>
+                      <p>
+                        <span>Roupa:</span> {stay.linen ?? '-'}
+                      </p>
+                      <p>
+                        <span>Email:</span> {stay.guest_email || '-'}
+                      </p>
+                      <p>
+                        <span>Telefone:</span> {stay.guest_phone || '-'}
+                      </p>
+                      <p>
+                        <span>Morada:</span> {stay.guest_address || '-'}
+                      </p>
+                      <p>
+                        <span>Ano:</span> {stay.year}
+                      </p>
+                      <p>
+                        <span>Notas:</span> {stay.notes?.trim() ? stay.notes : '-'}
                       </p>
                     </div>
                     <div className="result-actions">

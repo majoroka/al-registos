@@ -910,6 +910,21 @@ button:hover:not(:disabled) {
   font-size: 0.95rem;
 }
 
+.history-details {
+  display: grid;
+  gap: 3px;
+}
+
+.history-details p {
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+}
+
+.history-details p span {
+  color: var(--ink);
+  font-weight: 700;
+}
+
 .confirm-panel {
   width: min(520px, 100%);
   padding: 18px;
