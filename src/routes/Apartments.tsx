@@ -43,6 +43,8 @@ type ExportYearGroup = {
   months: ExportMonthGroup[]
 }
 
+type ExportOutputMode = 'pdf' | 'print'
+
 const currentYear = new Date().getFullYear()
 const minYear = 2000
 const maxYear = currentYear + 1
@@ -234,6 +236,15 @@ function escapeHtml(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;')
+}
+
+function toFileNameSegment(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()
 }
 
 function validateGuestForm(
@@ -439,14 +450,16 @@ function buildReservedDaysSet(stays: StayWithApartment[], year: number, month: n
   return reservedDays
 }
 
-function buildExportPdfHtml(params: {
+function buildExportDocumentHtml(params: {
   stays: StayWithApartment[]
   year: number
   month: number
   apartmentLabel: string
+  outputMode: ExportOutputMode
 }): string {
-  const { stays, year, month, apartmentLabel } = params
+  const { stays, year, month, apartmentLabel, outputMode } = params
   const monthLabel = monthLabelByValue[String(month)] ?? `Mês ${month}`
+  const suggestedBaseName = `registos-${toFileNameSegment(apartmentLabel || 'todos')}-${toFileNameSegment(monthLabel)}-${year}`
   const reservedDays = buildReservedDaysSet(stays, year, month)
   const monthStartWeekday = (new Date(year, month - 1, 1).getDay() + 6) % 7
   const daysInMonth = new Date(year, month, 0).getDate()
@@ -470,25 +483,26 @@ function buildExportPdfHtml(params: {
   const rowsHtml = stays
     .map((stay) => {
       const nights = calculateNights(stay.check_in ?? '', stay.check_out ?? '') ?? stay.nights_count
-      const apartmentName = stay.apartment?.name ?? 'Apartamento desconhecido'
       const notes = stay.notes?.trim() ? stay.notes : '-'
 
       return `
         <article class="record">
-          <h3>${escapeHtml(stay.guest_name)}</h3>
-          <div class="record-grid">
-            <p><strong>Apartamento:</strong> ${escapeHtml(apartmentName)}</p>
-            <p><strong>Entrada:</strong> ${escapeHtml(formatDateForPdf(stay.check_in))}</p>
-            <p><strong>Saída:</strong> ${escapeHtml(formatDateForPdf(stay.check_out))}</p>
-            <p><strong>Noites:</strong> ${nights}</p>
-            <p><strong>Nº Pessoas:</strong> ${stay.people_count}</p>
-            <p><strong>Roupa:</strong> ${escapeHtml(stay.linen ?? '-')}</p>
-            <p><strong>Email:</strong> ${escapeHtml(stay.guest_email || '-')}</p>
-            <p><strong>Telefone:</strong> ${escapeHtml(stay.guest_phone || '-')}</p>
-            <p><strong>Morada:</strong> ${escapeHtml(stay.guest_address || '-')}</p>
-            <p><strong>Ano:</strong> ${stay.year}</p>
-            <p class="notes"><strong>Notas:</strong> ${escapeHtml(notes)}</p>
-          </div>
+          <p class="record-line line-1">
+            <span><strong>Nome:</strong> ${escapeHtml(stay.guest_name)}</span>
+            <span><strong>Telefone:</strong> ${escapeHtml(stay.guest_phone || '-')}</span>
+          </p>
+          <p class="record-line line-2">
+            <span><strong>Entrada:</strong> ${escapeHtml(formatDateForPdf(stay.check_in))}</span>
+            <span><strong>Saída:</strong> ${escapeHtml(formatDateForPdf(stay.check_out))}</span>
+            <span><strong>Noites:</strong> ${nights}</span>
+          </p>
+          <p class="record-line line-3">
+            <span><strong>Morada:</strong> ${escapeHtml(stay.guest_address || '-')}</span>
+            <span><strong>Email:</strong> ${escapeHtml(stay.guest_email || '-')}</span>
+            <span><strong>Nº Pessoas:</strong> ${stay.people_count}</span>
+            <span><strong>Roupa:</strong> ${escapeHtml(stay.linen ?? '-')}</span>
+          </p>
+          <p class="record-line line-4"><strong>Notas:</strong> ${escapeHtml(notes)}</p>
         </article>
       `
     })
@@ -498,13 +512,13 @@ function buildExportPdfHtml(params: {
 <html lang="pt-PT">
   <head>
     <meta charset="utf-8" />
-    <title>Exportação ${escapeHtml(monthLabel)} ${year}</title>
+    <title>${escapeHtml(suggestedBaseName)}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap');
       @page {
         size: A4;
-        margin: 12mm;
+        margin: 8mm;
       }
       * {
         box-sizing: border-box;
@@ -513,11 +527,12 @@ function buildExportPdfHtml(params: {
         margin: 0;
         font-family: 'Rajdhani', 'Segoe UI', sans-serif;
         color: #11283e;
+        line-height: 1.2;
       }
       .sheet {
         width: 100%;
         display: grid;
-        gap: 12px;
+        gap: 8px;
       }
       .header {
         display: grid;
@@ -525,12 +540,12 @@ function buildExportPdfHtml(params: {
       }
       .header h1 {
         margin: 0;
-        font-size: 23px;
+        font-size: 20px;
         letter-spacing: 0.03em;
       }
       .header p {
         margin: 0;
-        font-size: 14px;
+        font-size: 12px;
         color: #42586d;
       }
       .calendar {
@@ -539,19 +554,19 @@ function buildExportPdfHtml(params: {
         table-layout: fixed;
       }
       .calendar th {
-        padding: 6px 4px;
+        padding: 4px 3px;
         border: 1px solid #d7e2ef;
-        font-size: 12px;
+        font-size: 10px;
         text-transform: uppercase;
         letter-spacing: 0.04em;
         background: #edf4fb;
       }
       .calendar .day {
-        height: 29px;
+        height: 20px;
         text-align: right;
-        padding: 4px 6px;
+        padding: 2px 4px;
         border: 1px solid #d7e2ef;
-        font-size: 12px;
+        font-size: 10px;
       }
       .calendar .day.empty {
         background: #f7f9fc;
@@ -563,34 +578,43 @@ function buildExportPdfHtml(params: {
       }
       .records {
         display: grid;
-        gap: 0;
+        gap: 5px;
       }
       .record {
-        padding: 10px 0 11px;
-        border-bottom: 1px solid #ccd8e6;
+        padding: 5px 7px;
+        border: 1px solid #ccd8e6;
+        border-radius: 10px;
+        background: #f8fbff;
         page-break-inside: avoid;
       }
-      .record:last-child {
-        border-bottom: 0;
-      }
-      .record h3 {
-        margin: 0 0 6px;
-        font-size: 18px;
-      }
-      .record-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 4px 18px;
-      }
-      .record-grid p {
+      .record-line {
         margin: 0;
-        font-size: 13px;
+        font-size: 11px;
+        color: #30485f;
       }
-      .record-grid strong {
+      .record-line strong {
         color: #0f3354;
       }
-      .record-grid .notes {
-        grid-column: 1 / -1;
+      .line-1 {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 4px 10px;
+      }
+      .line-2 {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 4px 10px;
+      }
+      .line-3 {
+        display: grid;
+        grid-template-columns: 1.25fr 1.25fr 0.65fr 0.65fr;
+        gap: 4px 10px;
+      }
+      .line-4 {
+        margin-top: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
     </style>
   </head>
@@ -598,7 +622,9 @@ function buildExportPdfHtml(params: {
     <main class="sheet">
       <header class="header">
         <h1>${escapeHtml(monthLabel)} ${year}</h1>
-        <p>Apartamento: ${escapeHtml(apartmentLabel)} | Registos: ${stays.length}</p>
+        <p>Apartamento: ${escapeHtml(apartmentLabel)} | Registos: ${stays.length} | Saída: ${
+          outputMode === 'pdf' ? 'PDF' : 'Impressão'
+        }</p>
       </header>
       <table class="calendar" aria-label="Calendário de reservas">
         <thead>
@@ -648,6 +674,7 @@ export default function Apartments() {
   const [exportHasRun, setExportHasRun] = useState(false)
   const [exportLoading, setExportLoading] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  const [exportOptionsOpen, setExportOptionsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
@@ -661,6 +688,7 @@ export default function Apartments() {
   const [loadingApartments, setLoadingApartments] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const exportOptionsRef = useRef<HTMLDivElement | null>(null)
 
   const selectedApartment = useMemo(
     () => apartments.find((apartment) => apartment.id === selectedApartmentId) ?? null,
@@ -715,6 +743,21 @@ export default function Apartments() {
       document.removeEventListener('mousedown', handleOutsideClick)
     }
   }, [menuOpen])
+
+  useEffect(() => {
+    if (!exportOptionsOpen) return
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (exportOptionsRef.current && !exportOptionsRef.current.contains(event.target as Node)) {
+        setExportOptionsOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick)
+    }
+  }, [exportOptionsOpen])
 
   const handleSelectApartment = (apartment: Apartment) => {
     setSelectedApartmentId(apartment.id)
@@ -903,6 +946,7 @@ export default function Apartments() {
 
   const handleOpenConsult = () => {
     setMenuOpen(false)
+    setExportOptionsOpen(false)
     setPanelMode('consult')
     setConsultOpen(true)
     setConsultError(null)
@@ -911,6 +955,7 @@ export default function Apartments() {
 
   const handleOpenExport = () => {
     setMenuOpen(false)
+    setExportOptionsOpen(false)
     setPanelMode('export')
     setConsultOpen(true)
     setConsultError(null)
@@ -928,6 +973,7 @@ export default function Apartments() {
     setConsultFilters((prev) => ({ ...prev, [field]: value }))
     setConsultError(null)
     setExportError(null)
+    setExportOptionsOpen(false)
   }
 
   const handleConsult = async (event: FormEvent<HTMLFormElement>) => {
@@ -974,7 +1020,7 @@ export default function Apartments() {
     }
   }
 
-  const handleExportPdf = async () => {
+  const handleExportDocument = async (outputMode: ExportOutputMode) => {
     setExportError(null)
     setNotice(null)
     const parsedFilters = parseFilters(consultFilters)
@@ -1011,17 +1057,22 @@ export default function Apartments() {
           'Apartamento desconhecido'
         : 'Todos'
 
-      const html = buildExportPdfHtml({
+      const html = buildExportDocumentHtml({
         stays: filteredResults,
         year: filters.year,
         month: filters.month,
         apartmentLabel,
+        outputMode,
       })
 
       printWindow.document.open()
       printWindow.document.write(html)
       printWindow.document.close()
-      setNotice('Exportação preparada. No diálogo, escolhe "Guardar em PDF" e o destino.')
+      if (outputMode === 'pdf') {
+        setNotice('Janela preparada. No diálogo, escolhe "Guardar em PDF", nomeia o ficheiro e seleciona o destino.')
+      } else {
+        setNotice('Janela de impressão preparada. Seleciona a impressora e confirma.')
+      }
     } catch (error) {
       printWindow.close()
       logError('Erro na exportação de registos', error)
@@ -1043,6 +1094,7 @@ export default function Apartments() {
     setExportResults([])
     setExportHasRun(false)
     setExportError(null)
+    setExportOptionsOpen(false)
   }
 
   const handleOpenConsultResult = (stay: StayWithApartment) => {
@@ -1171,9 +1223,43 @@ export default function Apartments() {
                     <button type="submit" disabled={exportLoading}>
                       {exportLoading ? 'A visualizar...' : 'Visualizar'}
                     </button>
-                    <button type="button" onClick={() => void handleExportPdf()} disabled={exportLoading}>
-                      {exportLoading ? 'A exportar...' : 'Exportar'}
-                    </button>
+                    <div className="export-actions-wrap" ref={exportOptionsRef}>
+                      <button
+                        type="button"
+                        onClick={() => setExportOptionsOpen((prev) => !prev)}
+                        disabled={exportLoading}
+                        aria-expanded={exportOptionsOpen}
+                        aria-haspopup="menu"
+                      >
+                        {exportLoading ? 'A exportar...' : 'Exportar'}
+                      </button>
+                      {exportOptionsOpen && (
+                        <div className="export-options-dropdown" role="menu">
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="secondary"
+                            onClick={() => {
+                              setExportOptionsOpen(false)
+                              void handleExportDocument('pdf')
+                            }}
+                          >
+                            PDF
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="secondary"
+                            onClick={() => {
+                              setExportOptionsOpen(false)
+                              void handleExportDocument('print')
+                            }}
+                          >
+                            Imprimir
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <button type="button" className="clear-btn" onClick={handleClearExport}>
                       Limpar
                     </button>

@@ -561,6 +561,39 @@ button:hover:not(:disabled) {
   box-shadow: none;
 }
 
+.export-actions-wrap {
+  position: relative;
+}
+
+.export-options-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 132px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 12px 22px rgba(10, 32, 55, 0.18);
+  display: grid;
+  gap: 6px;
+  z-index: 12;
+}
+
+.export-options-dropdown button {
+  width: 100%;
+  min-width: 0;
+  background: #e8edf4;
+  color: var(--ink-soft);
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+.export-options-dropdown button:hover {
+  transform: none;
+  box-shadow: none;
+}
+
 .consult-results {
   display: grid;
   gap: 8px;
