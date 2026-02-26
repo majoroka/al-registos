@@ -2,21 +2,33 @@ import { useEffect, useMemo, useState } from 'react'
 
 type DatePickerInputProps = {
   label: string
-  value: string
-  onChange: (value: string) => void
+  startValue: string
+  endValue: string
+  onChange: (startValue: string, endValue: string) => void
   placeholder?: string
-  min?: string
-  max?: string
 }
 
 type CalendarDay = {
   iso: string
   label: number
   inCurrentMonth: boolean
-  disabled: boolean
 }
 
 const weekdayLabels = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
+const monthOptions = [
+  { value: 0, label: 'Janeiro' },
+  { value: 1, label: 'Fevereiro' },
+  { value: 2, label: 'Março' },
+  { value: 3, label: 'Abril' },
+  { value: 4, label: 'Maio' },
+  { value: 5, label: 'Junho' },
+  { value: 6, label: 'Julho' },
+  { value: 7, label: 'Agosto' },
+  { value: 8, label: 'Setembro' },
+  { value: 9, label: 'Outubro' },
+  { value: 10, label: 'Novembro' },
+  { value: 11, label: 'Dezembro' },
+]
 
 function parseIsoDate(value: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
@@ -59,65 +71,68 @@ function formatDisplayDate(value: string): string {
   }).format(parsed)
 }
 
-function buildCalendarDays(year: number, month: number, min?: string, max?: string): CalendarDay[] {
+function getNextDayIso(value: string): string {
+  const parsed = parseIsoDate(value)
+  if (!parsed) return ''
+  const next = new Date(parsed)
+  next.setDate(parsed.getDate() + 1)
+  return toIsoDate(next)
+}
+
+function buildCalendarDays(year: number, month: number): CalendarDay[] {
   const firstDay = new Date(year, month, 1)
   const monthStartWeekday = (firstDay.getDay() + 6) % 7
   const gridStart = new Date(year, month, 1 - monthStartWeekday)
-  const minDate = min ? parseIsoDate(min) : null
-  const maxDate = max ? parseIsoDate(max) : null
 
   return Array.from({ length: 42 }, (_, index) => {
     const date = new Date(gridStart)
     date.setDate(gridStart.getDate() + index)
     const iso = toIsoDate(date)
-    const isBeforeMin = minDate ? date < minDate : false
-    const isAfterMax = maxDate ? date > maxDate : false
 
     return {
       iso,
       label: date.getDate(),
       inCurrentMonth: date.getMonth() === month,
-      disabled: isBeforeMin || isAfterMax,
     }
   })
 }
 
 export default function DatePickerInput({
   label,
-  value,
+  startValue,
+  endValue,
   onChange,
-  placeholder = 'Selecionar data',
-  min,
-  max,
+  placeholder = 'Selecionar entrada e saída',
 }: DatePickerInputProps) {
   const [open, setOpen] = useState(false)
-  const [draftValue, setDraftValue] = useState(value)
+  const [draftStart, setDraftStart] = useState(startValue)
+  const [draftEnd, setDraftEnd] = useState(endValue)
   const [viewYear, setViewYear] = useState(new Date().getFullYear())
   const [viewMonth, setViewMonth] = useState(new Date().getMonth())
-
-  const monthLabel = useMemo(
-    () => {
-      const monthName = new Intl.DateTimeFormat('pt-PT', { month: 'long' }).format(
-        new Date(viewYear, viewMonth, 1),
-      )
-      return `${monthName} ${viewYear}`
-    },
-    [viewYear, viewMonth],
-  )
+  const [yearOptions, setYearOptions] = useState<number[]>([])
 
   const calendarDays = useMemo(
-    () => buildCalendarDays(viewYear, viewMonth, min, max),
-    [viewYear, viewMonth, min, max],
+    () => buildCalendarDays(viewYear, viewMonth),
+    [viewYear, viewMonth],
   )
 
   useEffect(() => {
     if (!open) return
 
-    const source = parseIsoDate(value) ?? parseIsoDate(min ?? '') ?? new Date()
-    setDraftValue(value)
+    const source = parseIsoDate(startValue) ?? parseIsoDate(endValue) ?? new Date()
+    setDraftStart(startValue)
+    setDraftEnd(endValue)
     setViewYear(source.getFullYear())
     setViewMonth(source.getMonth())
-  }, [open, value, min])
+  }, [open, startValue, endValue])
+
+  useEffect(() => {
+    const current = new Date().getFullYear()
+    const startYear = 2000
+    const endYear = current + 5
+    const years = Array.from({ length: endYear - startYear + 1 }, (_, index) => startYear + index)
+    setYearOptions(years.reverse())
+  }, [])
 
   const moveMonth = (offset: number) => {
     const next = new Date(viewYear, viewMonth + offset, 1)
@@ -126,14 +141,58 @@ export default function DatePickerInput({
   }
 
   const handleConfirm = () => {
-    onChange(draftValue)
+    onChange(draftStart, draftEnd)
     setOpen(false)
   }
 
   const handleCancel = () => {
-    setDraftValue(value)
+    setDraftStart(startValue)
+    setDraftEnd(endValue)
     setOpen(false)
   }
+
+  const handlePickDay = (iso: string) => {
+    if (!draftStart || (draftStart && draftEnd)) {
+      setDraftStart(iso)
+      setDraftEnd('')
+      return
+    }
+
+    if (iso <= draftStart) {
+      setDraftStart(iso)
+      setDraftEnd('')
+      return
+    }
+
+    setDraftEnd(iso)
+  }
+
+  const handleManualStartChange = (value: string) => {
+    setDraftStart(value)
+    if (!value) {
+      setDraftEnd('')
+      return
+    }
+    if (draftEnd && draftEnd <= value) {
+      setDraftEnd('')
+    }
+  }
+
+  const handleManualEndChange = (value: string) => {
+    if (!value) {
+      setDraftEnd('')
+      return
+    }
+    if (draftStart && value <= draftStart) return
+    setDraftEnd(value)
+  }
+
+  const hasCompleteRange = !!draftStart && !!draftEnd
+  const summaryText = hasCompleteRange
+    ? `${formatDisplayDate(draftStart)} → ${formatDisplayDate(draftEnd)}`
+    : draftStart
+      ? `${formatDisplayDate(draftStart)} → ...`
+      : placeholder
 
   return (
     <>
@@ -141,12 +200,12 @@ export default function DatePickerInput({
         {label}
         <button
           type="button"
-          className={`date-input-trigger ${value ? 'has-value' : ''}`}
+          className={`date-input-trigger ${hasCompleteRange ? 'has-value' : ''}`}
           onClick={() => setOpen(true)}
           aria-haspopup="dialog"
           aria-expanded={open}
         >
-          <span>{value ? formatDisplayDate(value) : placeholder}</span>
+          <span>{summaryText}</span>
           <span className="date-input-icon" aria-hidden>
             ▼
           </span>
@@ -166,10 +225,53 @@ export default function DatePickerInput({
               <button type="button" className="date-picker-nav" onClick={() => moveMonth(-1)}>
                 ‹
               </button>
-              <strong>{monthLabel}</strong>
+              <div className="date-picker-period">
+                <select
+                  className="date-picker-select"
+                  value={viewMonth}
+                  onChange={(event) => setViewMonth(Number.parseInt(event.target.value, 10))}
+                >
+                  {monthOptions.map((option) => (
+                    <option key={option.label} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="date-picker-select"
+                  value={viewYear}
+                  onChange={(event) => setViewYear(Number.parseInt(event.target.value, 10))}
+                >
+                  {yearOptions.map((yearOption) => (
+                    <option key={yearOption} value={yearOption}>
+                      {yearOption}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <button type="button" className="date-picker-nav" onClick={() => moveMonth(1)}>
                 ›
               </button>
+            </div>
+
+            <div className="date-picker-manual">
+              <label>
+                Entrada
+                <input
+                  type="date"
+                  value={draftStart}
+                  onChange={(event) => handleManualStartChange(event.target.value)}
+                />
+              </label>
+              <label>
+                Saída
+                <input
+                  type="date"
+                  value={draftEnd}
+                  min={getNextDayIso(draftStart)}
+                  onChange={(event) => handleManualEndChange(event.target.value)}
+                />
+              </label>
             </div>
 
             <div className="date-picker-weekdays">
@@ -180,16 +282,23 @@ export default function DatePickerInput({
 
             <div className="date-picker-grid">
               {calendarDays.map((day) => {
-                const selected = draftValue === day.iso
+                const isStart = draftStart === day.iso
+                const isEnd = draftEnd === day.iso
+                const inRange =
+                  !!draftStart && !!draftEnd && day.iso > draftStart && day.iso < draftEnd
                 return (
                   <button
                     key={day.iso}
                     type="button"
                     className={`date-day ${day.inCurrentMonth ? '' : 'outside'} ${
-                      selected ? 'selected' : ''
+                      isStart ? 'range-start selected' : ''
+                    } ${isEnd ? 'range-end selected' : ''} ${inRange ? 'in-range' : ''}
+                    ${
+                      !day.inCurrentMonth && (isStart || isEnd || inRange)
+                        ? 'outside-highlight'
+                        : ''
                     }`}
-                    disabled={day.disabled}
-                    onClick={() => setDraftValue(day.iso)}
+                    onClick={() => handlePickDay(day.iso)}
                   >
                     {day.label}
                   </button>
@@ -198,13 +307,20 @@ export default function DatePickerInput({
             </div>
 
             <div className="date-picker-actions">
-              <button type="button" className="secondary" onClick={() => setDraftValue('')}>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  setDraftStart('')
+                  setDraftEnd('')
+                }}
+              >
                 Limpar
               </button>
               <button type="button" className="secondary" onClick={handleCancel}>
                 Cancelar
               </button>
-              <button type="button" onClick={handleConfirm}>
+              <button type="button" onClick={handleConfirm} disabled={!hasCompleteRange}>
                 OK
               </button>
             </div>

@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import DatePickerInput from '../components/DatePickerInput'
 import { listApartments } from '../data/apartments'
-import { createStay, listStays, updateStay } from '../data/stays'
+import { createStay, deleteStay, listStays, updateStay } from '../data/stays'
 import { logError, toPublicErrorMessage } from '../lib/errors'
 import type { Apartment, StayInput, StayWithApartment } from '../types'
 
@@ -102,28 +102,13 @@ function parseDateSafe(value: string | null | undefined): Date | null {
   return parsed
 }
 
-function toIsoDate(date: Date): string {
-  const year = String(date.getFullYear())
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function getNextDayIso(value: string): string | undefined {
-  const parsed = parseDateSafe(value)
-  if (!parsed) return undefined
-  const next = new Date(parsed)
-  next.setDate(parsed.getDate() + 1)
-  return toIsoDate(next)
-}
-
 function toGuestForm(stay: StayWithApartment): GuestForm {
   return {
     guest_name: stay.guest_name,
     guest_phone: stay.guest_phone,
     guest_email: stay.guest_email,
     guest_address: stay.guest_address,
-    people_count: String(stay.people_count),
+    people_count: stay.people_count >= 10 ? '10' : String(stay.people_count),
     linen: stay.linen === 'Sem Roupa' ? 'Sem Roupa' : 'Com Roupa',
     notes: stay.notes ?? '',
     check_in: stay.check_in ?? '',
@@ -167,7 +152,7 @@ function validateGuestForm(
     return { error: 'Email inválido.' }
   }
 
-  if (guestAddress.length < 5) {
+  if (guestAddress.length < 3) {
     return { error: 'A morada é obrigatória.' }
   }
 
@@ -236,6 +221,9 @@ export default function Apartments() {
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [historyReference, setHistoryReference] = useState('')
   const [historyResults, setHistoryResults] = useState<StayWithApartment[]>([])
+  const [pendingDeleteStay, setPendingDeleteStay] = useState<StayWithApartment | null>(null)
+  const [deletingStay, setDeletingStay] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [loadingApartments, setLoadingApartments] = useState(true)
@@ -246,7 +234,6 @@ export default function Apartments() {
     () => apartments.find((apartment) => apartment.id === selectedApartmentId) ?? null,
     [apartments, selectedApartmentId],
   )
-  const checkOutMin = useMemo(() => getNextDayIso(form.check_in), [form.check_in])
 
   const loadApartments = async () => {
     setLoadingApartments(true)
@@ -458,6 +445,49 @@ export default function Apartments() {
       setHistoryResults([])
     } finally {
       setHistoryLoading(false)
+    }
+  }
+
+  const handleRequestDeleteStay = (stay: StayWithApartment) => {
+    setDeleteError(null)
+    setPendingDeleteStay(stay)
+  }
+
+  const handleCancelDeleteStay = () => {
+    if (deletingStay) return
+    setDeleteError(null)
+    setPendingDeleteStay(null)
+  }
+
+  const handleConfirmDeleteStay = async () => {
+    if (!pendingDeleteStay) return
+
+    setDeletingStay(true)
+    setDeleteError(null)
+    setErrorMessage(null)
+    setNotice(null)
+
+    try {
+      await deleteStay(pendingDeleteStay.id)
+      setNotice('Registo eliminado.')
+      setGlobalSearchResults((prev) => prev.filter((item) => item.id !== pendingDeleteStay.id))
+      setConsultResults((prev) => prev.filter((item) => item.id !== pendingDeleteStay.id))
+      setHistoryResults((prev) => prev.filter((item) => item.id !== pendingDeleteStay.id))
+
+      if (selectedStayId === pendingDeleteStay.id) {
+        setSelectedStayId(null)
+        if (editorMode === 'edit') {
+          setEditorMode(null)
+          setForm(emptyForm)
+        }
+      }
+
+      setPendingDeleteStay(null)
+    } catch (error) {
+      logError('Erro ao eliminar registo', error)
+      setDeleteError(toPublicErrorMessage(error, 'Erro ao eliminar registo.'))
+    } finally {
+      setDeletingStay(false)
     }
   }
 
@@ -699,6 +729,15 @@ export default function Apartments() {
                           >
                             Consultar
                           </button>
+                          <button
+                            type="button"
+                            className="danger-light"
+                            onClick={() => {
+                              handleRequestDeleteStay(stay)
+                            }}
+                          >
+                            Eliminar
+                          </button>
                         </div>
                       </li>
                     ))}
@@ -808,6 +847,15 @@ export default function Apartments() {
                       >
                         Consultar
                       </button>
+                      <button
+                        type="button"
+                        className="danger-light"
+                        onClick={() => {
+                          handleRequestDeleteStay(stay)
+                        }}
+                      >
+                        Eliminar
+                      </button>
                     </div>
                   </li>
                 ))}
@@ -862,6 +910,38 @@ export default function Apartments() {
                 ))}
               </ul>
             )}
+          </section>
+        </div>
+      )}
+      {pendingDeleteStay && (
+        <div className="editor-backdrop" onClick={handleCancelDeleteStay}>
+          <section className="confirm-panel" onClick={(event) => event.stopPropagation()}>
+            <h3>Confirmar eliminação</h3>
+            <p>
+              Tens a certeza que queres eliminar o registo de{' '}
+              <strong>{pendingDeleteStay.guest_name}</strong>?
+            </p>
+            {deleteError && <p className="error">{deleteError}</p>}
+            <div className="confirm-actions">
+              <button
+                type="button"
+                className="secondary"
+                onClick={handleCancelDeleteStay}
+                disabled={deletingStay}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="danger-solid"
+                onClick={() => {
+                  void handleConfirmDeleteStay()
+                }}
+                disabled={deletingStay}
+              >
+                {deletingStay ? 'A eliminar...' : 'Eliminar registo'}
+              </button>
+            </div>
           </section>
         </div>
       )}
@@ -929,52 +1009,53 @@ export default function Apartments() {
                   onChange={(event) =>
                     setForm((prev) => ({ ...prev, guest_address: event.target.value }))
                   }
-                  minLength={5}
+                  minLength={3}
                   maxLength={200}
                   required
                 />
               </label>
               <DatePickerInput
-                label="Check-in"
-                value={form.check_in}
-                onChange={(value) => {
-                  setForm((prev) => {
-                    const nextMin = getNextDayIso(value)
-                    const shouldClearCheckOut =
-                      !!prev.check_out && !!nextMin && prev.check_out < nextMin
-
-                    return {
-                      ...prev,
-                      check_in: value,
-                      check_out: shouldClearCheckOut ? '' : prev.check_out,
-                    }
-                  })
-                }}
-              />
-              <DatePickerInput
-                label="Check-out"
-                value={form.check_out}
-                min={checkOutMin}
-                onChange={(value) =>
-                  setForm((prev) => ({ ...prev, check_out: value }))
+                label="Entrada / Saída"
+                startValue={form.check_in}
+                endValue={form.check_out}
+                onChange={(startValue, endValue) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    check_in: startValue,
+                    check_out: endValue,
+                  }))
                 }
               />
+              <p className="stay-nights-preview stay-nights-slot">
+                <span>Noites calculadas:</span>
+                <strong>{calculateNights(form.check_in, form.check_out) ?? '-'}</strong>
+              </p>
               <label>
                 Nº Pessoas
-                <input
-                  type="number"
-                  min="1"
-                  max="99"
+                <select
+                  className="filter-select"
                   value={form.people_count}
                   onChange={(event) =>
                     setForm((prev) => ({ ...prev, people_count: event.target.value }))
                   }
                   required
-                />
+                >
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                  <option value="6">6</option>
+                  <option value="7">7</option>
+                  <option value="8">8</option>
+                  <option value="9">9</option>
+                  <option value="10">10+</option>
+                </select>
               </label>
               <label>
                 Roupa
                 <select
+                  className="filter-select"
                   value={form.linen}
                   onChange={(event) =>
                     setForm((prev) => ({ ...prev, linen: event.target.value }))
@@ -985,10 +1066,6 @@ export default function Apartments() {
                   <option value="Sem Roupa">Sem Roupa</option>
                 </select>
               </label>
-              <p className="stay-nights-preview field-span-2">
-                Noites calculadas:{' '}
-                <strong>{calculateNights(form.check_in, form.check_out) ?? '-'}</strong>
-              </p>
               <label className="field-span-2">
                 Notas
                 <textarea
