@@ -544,6 +544,8 @@ button:hover:not(:disabled) {
 
 .consult-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
   align-self: end;
 }
@@ -562,6 +564,11 @@ button:hover:not(:disabled) {
 .consult-results {
   display: grid;
   gap: 8px;
+}
+
+.export-results {
+  display: grid;
+  gap: 10px;
 }
 
 .consult-results ul {
@@ -589,6 +596,107 @@ button:hover:not(:disabled) {
 
 .consult-results li p {
   font-size: 0.95rem;
+}
+
+.export-year-list {
+  display: grid;
+  gap: 14px;
+}
+
+.export-year-group {
+  border: 2px solid rgba(6, 79, 146, 0.28);
+  border-radius: 14px;
+  background: rgba(240, 247, 255, 0.8);
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.export-year-group > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-year-group h4 {
+  margin: 0;
+  font-size: 1.22rem;
+  color: #0f3f6f;
+}
+
+.export-year-group > header span {
+  font-size: 0.96rem;
+  color: #48607a;
+  font-weight: 600;
+}
+
+.export-month-list {
+  display: grid;
+  gap: 10px;
+}
+
+.export-month-group {
+  border: 1px solid rgba(18, 78, 132, 0.24);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.86);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.export-month-group h5 {
+  margin: 0;
+  font-size: 1.08rem;
+  color: #1f456c;
+}
+
+.export-client-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.export-client-list li {
+  border: 1px solid rgba(18, 37, 59, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.export-client-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.export-client-header strong {
+  font-size: 1.02rem;
+}
+
+.export-client-header span {
+  color: #4e637b;
+}
+
+.export-client-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 12px;
+}
+
+.export-client-grid p {
+  margin: 0;
+  color: #42566c;
+}
+
+.export-client-grid p span {
+  color: var(--ink);
+  font-weight: 700;
 }
 
 .result-actions {
@@ -1098,6 +1206,16 @@ button:hover:not(:disabled) {
   .consult-results li {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .export-year-group > header,
+  .export-client-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .export-client-grid {
+    grid-template-columns: 1fr;
   }
 
   .result-actions {

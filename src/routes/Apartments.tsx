@@ -25,6 +25,24 @@ type ConsultFilters = {
   month: string
 }
 
+type PanelMode = 'consult' | 'export'
+
+type ParsedFilters = {
+  apartmentId: number | null
+  year: number | null
+  month: number | null
+}
+
+type ExportMonthGroup = {
+  month: number
+  stays: StayWithApartment[]
+}
+
+type ExportYearGroup = {
+  year: number
+  months: ExportMonthGroup[]
+}
+
 const currentYear = new Date().getFullYear()
 const minYear = 2000
 const maxYear = currentYear + 1
@@ -66,6 +84,8 @@ const yearFilterOptions = Array.from(
   (_, index) => String(filterMinYear + index),
 ).reverse()
 
+const monthLabelByValue = Object.fromEntries(monthOptions.map((option) => [option.value, option.label]))
+
 function parsePositiveInteger(value: string): number | null {
   const trimmed = value.trim()
   if (!/^\d+$/.test(trimmed)) return null
@@ -102,6 +122,56 @@ function parseDateSafe(value: string | null | undefined): Date | null {
   return parsed
 }
 
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+function getStayInterval(stay: StayWithApartment): { start: Date; end: Date } | null {
+  const start = parseDateSafe(stay.check_in)
+  const end = parseDateSafe(stay.check_out)
+
+  if (start && end && end > start) {
+    return { start, end }
+  }
+
+  if (start) {
+    const inferredNights = Number.isFinite(stay.nights_count) ? Math.max(1, stay.nights_count) : 1
+    return {
+      start,
+      end: addDays(start, inferredNights),
+    }
+  }
+
+  if (end) {
+    return {
+      start: addDays(end, -1),
+      end,
+    }
+  }
+
+  return null
+}
+
+function intervalOverlaps(
+  intervalStart: Date,
+  intervalEnd: Date,
+  filterStart: Date,
+  filterEnd: Date,
+): boolean {
+  return intervalStart < filterEnd && intervalEnd > filterStart
+}
+
+function includesMonth(interval: { start: Date; end: Date }, month: number): boolean {
+  const cursor = new Date(interval.start.getFullYear(), interval.start.getMonth(), 1)
+  while (cursor < interval.end) {
+    if (cursor.getMonth() + 1 === month) return true
+    cursor.setMonth(cursor.getMonth() + 1)
+  }
+  return false
+}
+
 function getStayRecencyScore(stay: StayWithApartment): number {
   const checkInDate = parseDateSafe(stay.check_in)
   if (checkInDate) return checkInDate.getTime()
@@ -133,6 +203,37 @@ function toDuplicateGuestForm(stay: StayWithApartment): GuestForm {
     check_in: '',
     check_out: '',
   }
+}
+
+function formatDateForDisplay(value: string | null | undefined): string {
+  const parsed = parseDateSafe(value)
+  if (!parsed) return '-'
+
+  return new Intl.DateTimeFormat('pt-PT', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(parsed)
+}
+
+function formatDateForPdf(value: string | null | undefined): string {
+  const parsed = parseDateSafe(value)
+  if (!parsed) return '-'
+
+  return new Intl.DateTimeFormat('pt-PT', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  }).format(parsed)
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
 }
 
 function validateGuestForm(
@@ -205,6 +306,322 @@ function validateGuestForm(
   }
 }
 
+function parseFilters(filters: ConsultFilters): { parsed?: ParsedFilters; error?: string } {
+  const apartmentId = filters.apartmentId ? Number.parseInt(filters.apartmentId, 10) : null
+  const year = filters.year ? Number.parseInt(filters.year, 10) : null
+  const month = filters.month ? Number.parseInt(filters.month, 10) : null
+
+  if (filters.apartmentId && (!apartmentId || apartmentId <= 0)) {
+    return { error: 'Apartamento inválido.' }
+  }
+
+  if (filters.year && (!year || year < filterMinYear || year > filterMaxYear)) {
+    return { error: `Ano inválido. Usa um valor entre ${filterMinYear} e ${filterMaxYear}.` }
+  }
+
+  if (filters.month && (!month || month < 1 || month > 12)) {
+    return { error: 'Mês inválido.' }
+  }
+
+  return {
+    parsed: {
+      apartmentId,
+      year,
+      month,
+    },
+  }
+}
+
+function sortStaysByRecency(stays: StayWithApartment[]): StayWithApartment[] {
+  return [...stays].sort((left, right) => {
+    const scoreDiff = getStayRecencyScore(right) - getStayRecencyScore(left)
+    if (scoreDiff !== 0) return scoreDiff
+    return right.id - left.id
+  })
+}
+
+function filterStaysByFilters(stays: StayWithApartment[], filters: ParsedFilters): StayWithApartment[] {
+  const { year, month } = filters
+
+  if (year === null && month === null) {
+    return sortStaysByRecency(stays)
+  }
+
+  const yearStart = year !== null ? new Date(year, 0, 1) : null
+  const yearEnd = year !== null ? new Date(year + 1, 0, 1) : null
+  const monthStart = year !== null && month !== null ? new Date(year, month - 1, 1) : null
+  const monthEnd = year !== null && month !== null ? new Date(year, month, 1) : null
+
+  const filtered = stays.filter((stay) => {
+    const interval = getStayInterval(stay)
+
+    if (year !== null && month !== null) {
+      if (!interval || !monthStart || !monthEnd) return false
+      return intervalOverlaps(interval.start, interval.end, monthStart, monthEnd)
+    }
+
+    if (year !== null) {
+      if (!interval || !yearStart || !yearEnd) {
+        return stay.year === year
+      }
+      return intervalOverlaps(interval.start, interval.end, yearStart, yearEnd)
+    }
+
+    if (month !== null) {
+      if (!interval) return false
+      return includesMonth(interval, month)
+    }
+
+    return true
+  })
+
+  return sortStaysByRecency(filtered)
+}
+
+function groupStaysForExport(
+  stays: StayWithApartment[],
+  filters: ParsedFilters,
+): ExportYearGroup[] {
+  const forcedYear = filters.year
+  const forcedMonth = filters.month
+  const yearMap = new Map<number, Map<number, StayWithApartment[]>>()
+
+  for (const stay of stays) {
+    const interval = getStayInterval(stay)
+    const anchorDate =
+      interval?.start ?? parseDateSafe(stay.check_out) ?? new Date(stay.year, 0, 1)
+    const year = forcedYear ?? anchorDate.getFullYear()
+    const month = forcedMonth ?? anchorDate.getMonth() + 1
+
+    if (!yearMap.has(year)) {
+      yearMap.set(year, new Map<number, StayWithApartment[]>())
+    }
+    const monthMap = yearMap.get(year)!
+    if (!monthMap.has(month)) {
+      monthMap.set(month, [])
+    }
+    monthMap.get(month)!.push(stay)
+  }
+
+  return Array.from(yearMap.entries())
+    .sort((left, right) => right[0] - left[0])
+    .map(([year, monthMap]) => ({
+      year,
+      months: Array.from(monthMap.entries())
+        .sort((left, right) => right[0] - left[0])
+        .map(([month, monthStays]) => ({
+          month,
+          stays: sortStaysByRecency(monthStays),
+        })),
+    }))
+}
+
+function buildReservedDaysSet(stays: StayWithApartment[], year: number, month: number): Set<number> {
+  const reservedDays = new Set<number>()
+  const monthStart = new Date(year, month - 1, 1)
+  const monthEnd = new Date(year, month, 1)
+
+  for (const stay of stays) {
+    const interval = getStayInterval(stay)
+    if (!interval) continue
+    if (!intervalOverlaps(interval.start, interval.end, monthStart, monthEnd)) continue
+
+    const overlapStart = interval.start > monthStart ? interval.start : monthStart
+    const overlapEnd = interval.end < monthEnd ? interval.end : monthEnd
+    const cursor = new Date(overlapStart)
+
+    while (cursor < overlapEnd) {
+      reservedDays.add(cursor.getDate())
+      cursor.setDate(cursor.getDate() + 1)
+    }
+  }
+
+  return reservedDays
+}
+
+function buildExportPdfHtml(params: {
+  stays: StayWithApartment[]
+  year: number
+  month: number
+  apartmentLabel: string
+}): string {
+  const { stays, year, month, apartmentLabel } = params
+  const monthLabel = monthLabelByValue[String(month)] ?? `Mês ${month}`
+  const reservedDays = buildReservedDaysSet(stays, year, month)
+  const monthStartWeekday = (new Date(year, month - 1, 1).getDay() + 6) % 7
+  const daysInMonth = new Date(year, month, 0).getDate()
+  const weekdayHeaders = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
+  const totalCells = 42
+
+  const calendarCells = Array.from({ length: totalCells }, (_, index) => {
+    const dayNumber = index - monthStartWeekday + 1
+    if (dayNumber < 1 || dayNumber > daysInMonth) {
+      return '<td class="day empty"></td>'
+    }
+    const reservedClass = reservedDays.has(dayNumber) ? ' reserved' : ''
+    return `<td class="day${reservedClass}">${dayNumber}</td>`
+  })
+
+  const calendarRows = Array.from({ length: 6 }, (_, rowIndex) => {
+    const start = rowIndex * 7
+    return `<tr>${calendarCells.slice(start, start + 7).join('')}</tr>`
+  }).join('')
+
+  const rowsHtml = stays
+    .map((stay) => {
+      const nights = calculateNights(stay.check_in ?? '', stay.check_out ?? '') ?? stay.nights_count
+      const apartmentName = stay.apartment?.name ?? 'Apartamento desconhecido'
+      const notes = stay.notes?.trim() ? stay.notes : '-'
+
+      return `
+        <article class="record">
+          <h3>${escapeHtml(stay.guest_name)}</h3>
+          <div class="record-grid">
+            <p><strong>Apartamento:</strong> ${escapeHtml(apartmentName)}</p>
+            <p><strong>Entrada:</strong> ${escapeHtml(formatDateForPdf(stay.check_in))}</p>
+            <p><strong>Saída:</strong> ${escapeHtml(formatDateForPdf(stay.check_out))}</p>
+            <p><strong>Noites:</strong> ${nights}</p>
+            <p><strong>Nº Pessoas:</strong> ${stay.people_count}</p>
+            <p><strong>Roupa:</strong> ${escapeHtml(stay.linen ?? '-')}</p>
+            <p><strong>Email:</strong> ${escapeHtml(stay.guest_email || '-')}</p>
+            <p><strong>Telefone:</strong> ${escapeHtml(stay.guest_phone || '-')}</p>
+            <p><strong>Morada:</strong> ${escapeHtml(stay.guest_address || '-')}</p>
+            <p><strong>Ano:</strong> ${stay.year}</p>
+            <p class="notes"><strong>Notas:</strong> ${escapeHtml(notes)}</p>
+          </div>
+        </article>
+      `
+    })
+    .join('')
+
+  return `<!doctype html>
+<html lang="pt-PT">
+  <head>
+    <meta charset="utf-8" />
+    <title>Exportação ${escapeHtml(monthLabel)} ${year}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap');
+      @page {
+        size: A4;
+        margin: 12mm;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: 'Rajdhani', 'Segoe UI', sans-serif;
+        color: #11283e;
+      }
+      .sheet {
+        width: 100%;
+        display: grid;
+        gap: 12px;
+      }
+      .header {
+        display: grid;
+        gap: 2px;
+      }
+      .header h1 {
+        margin: 0;
+        font-size: 23px;
+        letter-spacing: 0.03em;
+      }
+      .header p {
+        margin: 0;
+        font-size: 14px;
+        color: #42586d;
+      }
+      .calendar {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+      }
+      .calendar th {
+        padding: 6px 4px;
+        border: 1px solid #d7e2ef;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        background: #edf4fb;
+      }
+      .calendar .day {
+        height: 29px;
+        text-align: right;
+        padding: 4px 6px;
+        border: 1px solid #d7e2ef;
+        font-size: 12px;
+      }
+      .calendar .day.empty {
+        background: #f7f9fc;
+      }
+      .calendar .day.reserved {
+        background: #bedcff;
+        color: #063d77;
+        font-weight: 700;
+      }
+      .records {
+        display: grid;
+        gap: 0;
+      }
+      .record {
+        padding: 10px 0 11px;
+        border-bottom: 1px solid #ccd8e6;
+        page-break-inside: avoid;
+      }
+      .record:last-child {
+        border-bottom: 0;
+      }
+      .record h3 {
+        margin: 0 0 6px;
+        font-size: 18px;
+      }
+      .record-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 4px 18px;
+      }
+      .record-grid p {
+        margin: 0;
+        font-size: 13px;
+      }
+      .record-grid strong {
+        color: #0f3354;
+      }
+      .record-grid .notes {
+        grid-column: 1 / -1;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="sheet">
+      <header class="header">
+        <h1>${escapeHtml(monthLabel)} ${year}</h1>
+        <p>Apartamento: ${escapeHtml(apartmentLabel)} | Registos: ${stays.length}</p>
+      </header>
+      <table class="calendar" aria-label="Calendário de reservas">
+        <thead>
+          <tr>${weekdayHeaders.map((label) => `<th>${label}</th>`).join('')}</tr>
+        </thead>
+        <tbody>
+          ${calendarRows}
+        </tbody>
+      </table>
+      <section class="records">
+        ${rowsHtml}
+      </section>
+    </main>
+    <script>
+      window.addEventListener('load', () => {
+        setTimeout(() => window.print(), 150);
+      });
+      window.addEventListener('afterprint', () => window.close());
+    </script>
+  </body>
+</html>`
+}
+
 export default function Apartments() {
   const [apartments, setApartments] = useState<Apartment[]>([])
   const [selectedApartmentId, setSelectedApartmentId] = useState<number | null>(null)
@@ -217,6 +634,7 @@ export default function Apartments() {
   const [searchingGlobal, setSearchingGlobal] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [consultOpen, setConsultOpen] = useState(false)
+  const [panelMode, setPanelMode] = useState<PanelMode>('consult')
   const [consultFilters, setConsultFilters] = useState<ConsultFilters>({
     apartmentId: '',
     year: '',
@@ -226,6 +644,10 @@ export default function Apartments() {
   const [consultHasRun, setConsultHasRun] = useState(false)
   const [consultLoading, setConsultLoading] = useState(false)
   const [consultError, setConsultError] = useState<string | null>(null)
+  const [exportResults, setExportResults] = useState<StayWithApartment[]>([])
+  const [exportHasRun, setExportHasRun] = useState(false)
+  const [exportLoading, setExportLoading] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
@@ -243,6 +665,22 @@ export default function Apartments() {
   const selectedApartment = useMemo(
     () => apartments.find((apartment) => apartment.id === selectedApartmentId) ?? null,
     [apartments, selectedApartmentId],
+  )
+
+  const parsedPanelFilters = useMemo<ParsedFilters>(() => {
+    const parsed = parseFilters(consultFilters)
+    return (
+      parsed.parsed ?? {
+        apartmentId: null,
+        year: null,
+        month: null,
+      }
+    )
+  }, [consultFilters])
+
+  const exportGroups = useMemo(
+    () => groupStaysForExport(exportResults, parsedPanelFilters),
+    [exportResults, parsedPanelFilters],
   )
 
   const loadApartments = async () => {
@@ -443,6 +881,7 @@ export default function Apartments() {
       setNotice('Registo eliminado.')
       setGlobalSearchResults((prev) => prev.filter((item) => item.id !== pendingDeleteStay.id))
       setConsultResults((prev) => prev.filter((item) => item.id !== pendingDeleteStay.id))
+      setExportResults((prev) => prev.filter((item) => item.id !== pendingDeleteStay.id))
       setHistoryResults((prev) => prev.filter((item) => item.id !== pendingDeleteStay.id))
 
       if (selectedStayId === pendingDeleteStay.id) {
@@ -464,79 +903,131 @@ export default function Apartments() {
 
   const handleOpenConsult = () => {
     setMenuOpen(false)
+    setPanelMode('consult')
     setConsultOpen(true)
     setConsultError(null)
+    setExportError(null)
   }
 
   const handleOpenExport = () => {
     setMenuOpen(false)
-    setNotice('Exportar será implementado no próximo passo.')
+    setPanelMode('export')
+    setConsultOpen(true)
+    setConsultError(null)
+    setExportError(null)
+  }
+
+  const fetchFilteredStays = async (filters: ParsedFilters): Promise<StayWithApartment[]> => {
+    const baseResults = await listStays({
+      apartmentId: filters.apartmentId ?? undefined,
+    })
+    return filterStaysByFilters(baseResults, filters)
   }
 
   const handleConsultFilterChange = (field: keyof ConsultFilters, value: string) => {
     setConsultFilters((prev) => ({ ...prev, [field]: value }))
+    setConsultError(null)
+    setExportError(null)
   }
 
   const handleConsult = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setConsultError(null)
     setConsultHasRun(true)
-
-    const apartmentId = consultFilters.apartmentId
-      ? Number.parseInt(consultFilters.apartmentId, 10)
-      : null
-    const year = consultFilters.year ? Number.parseInt(consultFilters.year, 10) : null
-    const month = consultFilters.month ? Number.parseInt(consultFilters.month, 10) : null
-
-    if (consultFilters.apartmentId && (!apartmentId || apartmentId <= 0)) {
-      setConsultError('Apartamento inválido.')
-      return
-    }
-
-    if (consultFilters.year && (!year || year < filterMinYear || year > filterMaxYear)) {
-      setConsultError(`Ano inválido. Usa um valor entre ${filterMinYear} e ${filterMaxYear}.`)
-      return
-    }
-
-    if (consultFilters.month && (!month || month < 1 || month > 12)) {
-      setConsultError('Mês inválido.')
+    const parsedFilters = parseFilters(consultFilters)
+    if (parsedFilters.error || !parsedFilters.parsed) {
+      setConsultError(parsedFilters.error ?? 'Filtros inválidos.')
       return
     }
 
     setConsultLoading(true)
     try {
-      const baseResults = await listStays({
-        apartmentId: apartmentId ?? undefined,
-      })
-
-      const filteredResults = baseResults.filter((stay) => {
-        const checkInDate = parseDateSafe(stay.check_in)
-        const checkOutDate = parseDateSafe(stay.check_out)
-        const yearSource = checkInDate ?? checkOutDate
-
-        const yearMatch =
-          year === null
-            ? true
-            : yearSource
-              ? yearSource.getFullYear() === year
-              : stay.year === year
-
-        const monthMatch =
-          month === null
-            ? true
-            : [checkInDate, checkOutDate].some(
-                (dateCandidate) => dateCandidate !== null && dateCandidate.getMonth() + 1 === month,
-              )
-
-        return yearMatch && monthMatch
-      })
-
+      const filteredResults = await fetchFilteredStays(parsedFilters.parsed)
       setConsultResults(filteredResults)
     } catch (error) {
       logError('Erro na consulta de registos', error)
       setConsultError(toPublicErrorMessage(error, 'Erro ao consultar registos.'))
     } finally {
       setConsultLoading(false)
+    }
+  }
+
+  const handleVisualizeExport = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setExportError(null)
+    setExportHasRun(true)
+    const parsedFilters = parseFilters(consultFilters)
+    if (parsedFilters.error || !parsedFilters.parsed) {
+      setExportError(parsedFilters.error ?? 'Filtros inválidos.')
+      return
+    }
+
+    setExportLoading(true)
+    try {
+      const filteredResults = await fetchFilteredStays(parsedFilters.parsed)
+      setExportResults(filteredResults)
+    } catch (error) {
+      logError('Erro na visualização de exportação', error)
+      setExportError(toPublicErrorMessage(error, 'Erro ao visualizar registos para exportação.'))
+    } finally {
+      setExportLoading(false)
+    }
+  }
+
+  const handleExportPdf = async () => {
+    setExportError(null)
+    setNotice(null)
+    const parsedFilters = parseFilters(consultFilters)
+    if (parsedFilters.error || !parsedFilters.parsed) {
+      setExportError(parsedFilters.error ?? 'Filtros inválidos.')
+      return
+    }
+    const filters = parsedFilters.parsed
+    if (filters.year === null || filters.month === null) {
+      setExportError('Para exportar, seleciona obrigatoriamente o ano e o mês.')
+      return
+    }
+
+    const printWindow = window.open('', '_blank', 'noopener,noreferrer')
+    if (!printWindow) {
+      setExportError('Não foi possível abrir a janela de impressão. Verifica o bloqueador de popups.')
+      return
+    }
+
+    setExportLoading(true)
+    setExportHasRun(true)
+    try {
+      const filteredResults = await fetchFilteredStays(filters)
+      setExportResults(filteredResults)
+
+      if (filteredResults.length === 0) {
+        printWindow.close()
+        setExportError('Sem registos para exportar com os filtros aplicados.')
+        return
+      }
+
+      const apartmentLabel = filters.apartmentId
+        ? apartments.find((apartment) => apartment.id === filters.apartmentId)?.name ??
+          'Apartamento desconhecido'
+        : 'Todos'
+
+      const html = buildExportPdfHtml({
+        stays: filteredResults,
+        year: filters.year,
+        month: filters.month,
+        apartmentLabel,
+      })
+
+      printWindow.document.open()
+      printWindow.document.write(html)
+      printWindow.document.close()
+      setNotice('Exportação preparada. No diálogo, escolhe "Guardar em PDF" e o destino.')
+    } catch (error) {
+      printWindow.close()
+      logError('Erro na exportação de registos', error)
+      setExportError(toPublicErrorMessage(error, 'Erro ao exportar registos.'))
+    } finally {
+      setExportLoading(false)
     }
   }
 
@@ -547,10 +1038,19 @@ export default function Apartments() {
     setConsultError(null)
   }
 
+  const handleClearExport = () => {
+    setConsultFilters({ apartmentId: '', year: '', month: '' })
+    setExportResults([])
+    setExportHasRun(false)
+    setExportError(null)
+  }
+
   const handleOpenConsultResult = (stay: StayWithApartment) => {
     setConsultOpen(false)
     handleOpenSearchResult(stay)
   }
+
+  const isConsultMode = panelMode === 'consult'
 
   return (
     <>
@@ -589,8 +1089,12 @@ export default function Apartments() {
           <div className="consult-panel">
             <div className="consult-panel-header">
               <div>
-                <h2>Consultar registos</h2>
-                <p>Filtra por apartamento, ano e mês.</p>
+                <h2>{isConsultMode ? 'Consultar registos' : 'Exportar registos'}</h2>
+                <p>
+                  {isConsultMode
+                    ? 'Filtra por apartamento, ano e mês.'
+                    : 'Filtra por apartamento, ano e mês para visualizar ou exportar.'}
+                </p>
               </div>
               <button
                 type="button"
@@ -601,7 +1105,7 @@ export default function Apartments() {
               </button>
             </div>
 
-            <form className="consult-form" onSubmit={handleConsult}>
+            <form className="consult-form" onSubmit={isConsultMode ? handleConsult : handleVisualizeExport}>
               <label>
                 Apartamento
                 <select
@@ -653,68 +1157,170 @@ export default function Apartments() {
               </label>
 
               <div className="consult-actions">
-                <button type="submit" disabled={consultLoading}>
-                  {consultLoading ? 'A consultar...' : 'Consultar'}
-                </button>
-                <button type="button" className="clear-btn" onClick={handleClearConsult}>
-                  Limpar
-                </button>
+                {isConsultMode ? (
+                  <>
+                    <button type="submit" disabled={consultLoading}>
+                      {consultLoading ? 'A consultar...' : 'Consultar'}
+                    </button>
+                    <button type="button" className="clear-btn" onClick={handleClearConsult}>
+                      Limpar
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button type="submit" disabled={exportLoading}>
+                      {exportLoading ? 'A visualizar...' : 'Visualizar'}
+                    </button>
+                    <button type="button" onClick={() => void handleExportPdf()} disabled={exportLoading}>
+                      {exportLoading ? 'A exportar...' : 'Exportar'}
+                    </button>
+                    <button type="button" className="clear-btn" onClick={handleClearExport}>
+                      Limpar
+                    </button>
+                  </>
+                )}
               </div>
             </form>
 
-            {consultError && <p className="error">{consultError}</p>}
+            {isConsultMode ? (
+              <>
+                {consultError && <p className="error">{consultError}</p>}
 
-            {consultHasRun && (
-              <div className="consult-results">
-                <h3>Resultado da consulta</h3>
-                {consultLoading ? (
-                  <p>A consultar...</p>
-                ) : consultResults.length === 0 ? (
-                  <p className="empty-state">Sem registos para os filtros aplicados.</p>
-                ) : (
-                  <ul>
-                    {consultResults.map((stay) => (
-                      <li key={`consult-${stay.id}`}>
-                        <div>
-                          <strong>{stay.guest_name}</strong>
-                          <p>{stay.apartment?.name ?? 'Apartamento desconhecido'}</p>
-                          <p>{stay.year}</p>
-                        </div>
-                        <div className="result-actions">
-                          <button type="button" onClick={() => handleOpenConsultResult(stay)}>
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary"
-                            onClick={() => handleCreateFromExisting(stay)}
-                          >
-                            Criar
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary"
-                            onClick={() => {
-                              void handleOpenCustomerHistory(stay)
-                            }}
-                          >
-                            Consultar
-                          </button>
-                          <button
-                            type="button"
-                            className="danger-light"
-                            onClick={() => {
-                              handleRequestDeleteStay(stay)
-                            }}
-                          >
-                            Eliminar
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
+                {consultHasRun && (
+                  <div className="consult-results">
+                    <h3>Resultado da consulta</h3>
+                    {consultLoading ? (
+                      <p>A consultar...</p>
+                    ) : consultResults.length === 0 ? (
+                      <p className="empty-state">Sem registos para os filtros aplicados.</p>
+                    ) : (
+                      <ul>
+                        {consultResults.map((stay) => (
+                          <li key={`consult-${stay.id}`}>
+                            <div>
+                              <strong>{stay.guest_name}</strong>
+                              <p>{stay.apartment?.name ?? 'Apartamento desconhecido'}</p>
+                              <p>{stay.year}</p>
+                            </div>
+                            <div className="result-actions">
+                              <button type="button" onClick={() => handleOpenConsultResult(stay)}>
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary"
+                                onClick={() => handleCreateFromExisting(stay)}
+                              >
+                                Criar
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary"
+                                onClick={() => {
+                                  void handleOpenCustomerHistory(stay)
+                                }}
+                              >
+                                Consultar
+                              </button>
+                              <button
+                                type="button"
+                                className="danger-light"
+                                onClick={() => {
+                                  handleRequestDeleteStay(stay)
+                                }}
+                              >
+                                Eliminar
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 )}
-              </div>
+              </>
+            ) : (
+              <>
+                {exportError && <p className="error">{exportError}</p>}
+                {exportHasRun && (
+                  <div className="export-results">
+                    <h3>Visualização para exportação</h3>
+                    {exportLoading ? (
+                      <p>A carregar registos...</p>
+                    ) : exportResults.length === 0 ? (
+                      <p className="empty-state">Sem registos para os filtros aplicados.</p>
+                    ) : (
+                      <div className="export-year-list">
+                        {exportGroups.map((yearGroup) => (
+                          <section key={`export-year-${yearGroup.year}`} className="export-year-group">
+                            <header>
+                              <h4>{yearGroup.year}</h4>
+                              <span>{yearGroup.months.reduce((count, monthGroup) => count + monthGroup.stays.length, 0)} registos</span>
+                            </header>
+                            <div className="export-month-list">
+                              {yearGroup.months.map((monthGroup) => (
+                                <section
+                                  key={`export-month-${yearGroup.year}-${monthGroup.month}`}
+                                  className="export-month-group"
+                                >
+                                  <h5>
+                                    {monthLabelByValue[String(monthGroup.month)] ?? `Mês ${monthGroup.month}`}
+                                  </h5>
+                                  <ul className="export-client-list">
+                                    {monthGroup.stays.map((stay) => (
+                                      <li key={`export-row-${stay.id}`}>
+                                        <div className="export-client-header">
+                                          <strong>{stay.guest_name}</strong>
+                                          <span>{stay.apartment?.name ?? 'Apartamento desconhecido'}</span>
+                                        </div>
+                                        <div className="export-client-grid">
+                                          <p>
+                                            <span>Entrada:</span> {formatDateForDisplay(stay.check_in)}
+                                          </p>
+                                          <p>
+                                            <span>Saída:</span> {formatDateForDisplay(stay.check_out)}
+                                          </p>
+                                          <p>
+                                            <span>Noites:</span>{' '}
+                                            {calculateNights(stay.check_in ?? '', stay.check_out ?? '') ??
+                                              stay.nights_count}
+                                          </p>
+                                          <p>
+                                            <span>Nº Pessoas:</span> {stay.people_count}
+                                          </p>
+                                          <p>
+                                            <span>Roupa:</span> {stay.linen ?? '-'}
+                                          </p>
+                                          <p>
+                                            <span>Email:</span> {stay.guest_email || '-'}
+                                          </p>
+                                          <p>
+                                            <span>Telefone:</span> {stay.guest_phone || '-'}
+                                          </p>
+                                          <p>
+                                            <span>Morada:</span> {stay.guest_address || '-'}
+                                          </p>
+                                          <p>
+                                            <span>Ano:</span> {stay.year}
+                                          </p>
+                                          <p className="field-span-2">
+                                            <span>Notas:</span>{' '}
+                                            {stay.notes?.trim() ? stay.notes : '-'}
+                                          </p>
+                                        </div>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </section>
+                              ))}
+                            </div>
+                          </section>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
