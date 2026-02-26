@@ -27,7 +27,7 @@ type ConsultFilters = {
   month: string
 }
 
-type PanelMode = 'consult' | 'export'
+type PanelMode = 'consult' | 'visualize' | 'export' | 'print'
 
 type ParsedFilters = {
   apartmentId: number | null
@@ -818,7 +818,6 @@ export default function Apartments() {
   const [exportHasRun, setExportHasRun] = useState(false)
   const [exportLoading, setExportLoading] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
-  const [exportOptionsOpen, setExportOptionsOpen] = useState(false)
   const [pendingPdfExport, setPendingPdfExport] = useState<PendingPdfExport | null>(null)
   const [pdfFileName, setPdfFileName] = useState('')
   const [pdfDialogError, setPdfDialogError] = useState<string | null>(null)
@@ -836,7 +835,6 @@ export default function Apartments() {
   const [loadingApartments, setLoadingApartments] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
-  const exportOptionsRef = useRef<HTMLDivElement | null>(null)
 
   const selectedApartment = useMemo(
     () => apartments.find((apartment) => apartment.id === selectedApartmentId) ?? null,
@@ -901,21 +899,6 @@ export default function Apartments() {
       window.clearTimeout(timeoutId)
     }
   }, [notice])
-
-  useEffect(() => {
-    if (!exportOptionsOpen) return
-
-    const handleOutsideClick = (event: MouseEvent) => {
-      if (exportOptionsRef.current && !exportOptionsRef.current.contains(event.target as Node)) {
-        setExportOptionsOpen(false)
-      }
-    }
-
-    document.addEventListener('mousedown', handleOutsideClick)
-    return () => {
-      document.removeEventListener('mousedown', handleOutsideClick)
-    }
-  }, [exportOptionsOpen])
 
   const handleSelectApartment = (apartment: Apartment) => {
     setSelectedApartmentId(apartment.id)
@@ -1102,26 +1085,31 @@ export default function Apartments() {
     }
   }
 
-  const handleOpenConsult = () => {
+  const openPanel = (mode: PanelMode) => {
     setMenuOpen(false)
-    setExportOptionsOpen(false)
     setPendingPdfExport(null)
+    setPdfFileName('')
     setPdfDialogError(null)
-    setPanelMode('consult')
+    setPanelMode(mode)
     setConsultOpen(true)
     setConsultError(null)
     setExportError(null)
   }
 
+  const handleOpenConsult = () => {
+    openPanel('consult')
+  }
+
+  const handleOpenVisualize = () => {
+    openPanel('visualize')
+  }
+
   const handleOpenExport = () => {
-    setMenuOpen(false)
-    setExportOptionsOpen(false)
-    setPendingPdfExport(null)
-    setPdfDialogError(null)
-    setPanelMode('export')
-    setConsultOpen(true)
-    setConsultError(null)
-    setExportError(null)
+    openPanel('export')
+  }
+
+  const handleOpenPrint = () => {
+    openPanel('print')
   }
 
   const fetchFilteredStays = async (filters: ParsedFilters): Promise<StayWithApartment[]> => {
@@ -1135,13 +1123,12 @@ export default function Apartments() {
     setConsultFilters((prev) => ({ ...prev, [field]: value }))
     setConsultError(null)
     setExportError(null)
-    setExportOptionsOpen(false)
     setPendingPdfExport(null)
+    setPdfFileName('')
     setPdfDialogError(null)
   }
 
-  const handleConsult = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  const handleConsult = async () => {
     setConsultError(null)
     setConsultHasRun(true)
     const parsedFilters = parseFilters(consultFilters)
@@ -1162,8 +1149,7 @@ export default function Apartments() {
     }
   }
 
-  const handleVisualizeExport = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  const handleVisualizeExport = async () => {
     setExportError(null)
     setExportHasRun(true)
     const parsedFilters = parseFilters(consultFilters)
@@ -1315,7 +1301,6 @@ export default function Apartments() {
     setExportResults([])
     setExportHasRun(false)
     setExportError(null)
-    setExportOptionsOpen(false)
     setPendingPdfExport(null)
     setPdfDialogError(null)
     setPdfFileName('')
@@ -1327,6 +1312,25 @@ export default function Apartments() {
   }
 
   const isConsultMode = panelMode === 'consult'
+  const isVisualizeMode = panelMode === 'visualize'
+  const isExportMode = panelMode === 'export'
+
+  const handlePanelSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (isConsultMode) {
+      void handleConsult()
+      return
+    }
+    if (isVisualizeMode) {
+      void handleVisualizeExport()
+      return
+    }
+    if (isExportMode) {
+      void handleExportDocument('pdf')
+      return
+    }
+    void handleExportDocument('print')
+  }
 
   return (
     <>
@@ -1353,8 +1357,14 @@ export default function Apartments() {
                 <button type="button" role="menuitem" onClick={handleOpenConsult}>
                   Consultar
                 </button>
+                <button type="button" role="menuitem" onClick={handleOpenVisualize}>
+                  Visualizar
+                </button>
                 <button type="button" role="menuitem" onClick={handleOpenExport}>
                   Exportar
+                </button>
+                <button type="button" role="menuitem" onClick={handleOpenPrint}>
+                  Imprimir
                 </button>
               </div>
             )}
@@ -1365,11 +1375,23 @@ export default function Apartments() {
           <div className="consult-panel">
             <div className="consult-panel-header">
               <div>
-                <h2>{isConsultMode ? 'Consultar registos' : 'Exportar registos'}</h2>
+                <h2>
+                  {isConsultMode
+                    ? 'Consultar registos'
+                    : isVisualizeMode
+                      ? 'Visualizar registos'
+                      : isExportMode
+                        ? 'Exportar registos'
+                        : 'Imprimir registos'}
+                </h2>
                 <p>
                   {isConsultMode
                     ? 'Filtra por apartamento, ano e mês.'
-                    : 'Filtra por apartamento, ano e mês para visualizar ou exportar.'}
+                    : isVisualizeMode
+                      ? 'Filtra por apartamento, ano e mês para visualizar no ecrã.'
+                      : isExportMode
+                        ? 'Filtra por apartamento, ano e mês para exportar em PDF.'
+                        : 'Filtra por apartamento, ano e mês para imprimir.'}
                 </p>
               </div>
               <button
@@ -1381,7 +1403,7 @@ export default function Apartments() {
               </button>
             </div>
 
-            <form className="consult-form" onSubmit={isConsultMode ? handleConsult : handleVisualizeExport}>
+            <form className="consult-form" onSubmit={handlePanelSubmit}>
               <label>
                 Apartamento
                 <select
@@ -1445,45 +1467,18 @@ export default function Apartments() {
                 ) : (
                   <>
                     <button type="submit" disabled={exportLoading}>
-                      {exportLoading ? 'A visualizar...' : 'Visualizar'}
+                      {isVisualizeMode
+                        ? exportLoading
+                          ? 'A visualizar...'
+                          : 'Visualizar'
+                        : isExportMode
+                          ? exportLoading
+                            ? 'A exportar...'
+                            : 'Exportar'
+                          : exportLoading
+                            ? 'A imprimir...'
+                            : 'Imprimir'}
                     </button>
-                    <div className="export-actions-wrap" ref={exportOptionsRef}>
-                      <button
-                        type="button"
-                        onClick={() => setExportOptionsOpen((prev) => !prev)}
-                        disabled={exportLoading}
-                        aria-expanded={exportOptionsOpen}
-                        aria-haspopup="menu"
-                      >
-                        {exportLoading ? 'A exportar...' : 'Exportar'}
-                      </button>
-                      {exportOptionsOpen && (
-                        <div className="export-options-dropdown" role="menu">
-                          <button
-                            type="button"
-                            role="menuitem"
-                            className="secondary"
-                            onClick={() => {
-                              setExportOptionsOpen(false)
-                              void handleExportDocument('pdf')
-                            }}
-                          >
-                            PDF
-                          </button>
-                          <button
-                            type="button"
-                            role="menuitem"
-                            className="secondary"
-                            onClick={() => {
-                              setExportOptionsOpen(false)
-                              void handleExportDocument('print')
-                            }}
-                          >
-                            Imprimir
-                          </button>
-                        </div>
-                      )}
-                    </div>
                     <button type="button" className="clear-btn" onClick={handleClearExport}>
                       Limpar
                     </button>
@@ -1549,12 +1544,12 @@ export default function Apartments() {
                   </div>
                 )}
               </>
-            ) : (
+            ) : isVisualizeMode ? (
               <>
                 {exportError && <p className="error">{exportError}</p>}
                 {exportHasRun && (
                   <div className="export-results">
-                    <h3>Visualização para exportação</h3>
+                    <h3>Resultado da visualização</h3>
                     {exportLoading ? (
                       <p>A carregar registos...</p>
                     ) : exportResults.length === 0 ? (
@@ -1630,6 +1625,10 @@ export default function Apartments() {
                     )}
                   </div>
                 )}
+              </>
+            ) : (
+              <>
+                {exportError && <p className="error">{exportError}</p>}
               </>
             )}
           </div>
