@@ -1076,6 +1076,19 @@ button:hover:not(:disabled) {
   gap: 10px;
 }
 
+.export-file-panel label {
+  margin: 0;
+}
+
+.export-file-panel input {
+  margin-top: 6px;
+}
+
+.dialog-help {
+  font-size: 0.95rem;
+  color: #587088;
+}
+
 .confirm-actions {
   display: flex;
   justify-content: flex-end;

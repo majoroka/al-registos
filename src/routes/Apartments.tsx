@@ -1,4 +1,6 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import html2canvas from 'html2canvas'
+import jsPDF from 'jspdf'
 import DatePickerInput from '../components/DatePickerInput'
 import { listApartments } from '../data/apartments'
 import { createStay, deleteStay, listStays, updateStay } from '../data/stays'
@@ -44,6 +46,13 @@ type ExportYearGroup = {
 }
 
 type ExportOutputMode = 'pdf' | 'print'
+
+type PendingPdfExport = {
+  stays: StayWithApartment[]
+  year: number
+  month: number
+  apartmentLabel: string
+}
 
 const currentYear = new Date().getFullYear()
 const minYear = 2000
@@ -245,6 +254,123 @@ function toFileNameSegment(value: string): string {
     .replace(/[^a-zA-Z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .toLowerCase()
+}
+
+function buildExportFileName(apartmentLabel: string, month: number, year: number): string {
+  const monthLabel = monthLabelByValue[String(month)] ?? `mes-${month}`
+  return `registos-${toFileNameSegment(apartmentLabel || 'todos')}-${toFileNameSegment(monthLabel)}-${year}.pdf`
+}
+
+async function buildPdfBlobFromHtml(html: string): Promise<Blob> {
+  const iframe = document.createElement('iframe')
+  iframe.setAttribute('aria-hidden', 'true')
+  iframe.style.position = 'fixed'
+  iframe.style.right = '-10000px'
+  iframe.style.bottom = '-10000px'
+  iframe.style.width = '794px'
+  iframe.style.height = '1123px'
+  iframe.style.opacity = '0'
+  iframe.style.pointerEvents = 'none'
+  document.body.appendChild(iframe)
+
+  try {
+    const targetWindow = iframe.contentWindow
+    const targetDocument = iframe.contentDocument
+    if (!targetWindow || !targetDocument) {
+      throw new Error('Não foi possível preparar a área de renderização do PDF.')
+    }
+
+    targetDocument.open()
+    targetDocument.write(html)
+    targetDocument.close()
+
+    await new Promise<void>((resolve) => {
+      targetWindow.addEventListener('load', () => resolve(), { once: true })
+      setTimeout(() => resolve(), 220)
+    })
+
+    const sheet = targetDocument.querySelector<HTMLElement>('.sheet')
+    if (!sheet) {
+      throw new Error('Estrutura de exportação inválida.')
+    }
+
+    const canvas = await html2canvas(sheet, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      windowWidth: Math.max(targetDocument.body.scrollWidth, 794),
+      windowHeight: Math.max(targetDocument.body.scrollHeight, 1123),
+    })
+
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+      compress: true,
+    })
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const marginX = 5
+    const marginY = 5
+    const usableWidth = pageWidth - marginX * 2
+    const usableHeight = pageHeight - marginY * 2
+    const ratio = Math.min(usableWidth / canvas.width, usableHeight / canvas.height)
+    const renderWidth = canvas.width * ratio
+    const renderHeight = canvas.height * ratio
+    const offsetX = (pageWidth - renderWidth) / 2
+    const offsetY = marginY
+
+    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', offsetX, offsetY, renderWidth, renderHeight)
+    return pdf.output('blob')
+  } finally {
+    iframe.remove()
+  }
+}
+
+async function savePdfBlob(blob: Blob, fileName: string): Promise<'picker' | 'download'> {
+  type SavePickerWindow = Window & {
+    showSaveFilePicker?: (options: {
+      suggestedName: string
+      types: Array<{
+        description: string
+        accept: Record<string, string[]>
+      }>
+      excludeAcceptAllOption?: boolean
+    }) => Promise<{
+      createWritable: () => Promise<{
+        write: (data: Blob) => Promise<void>
+        close: () => Promise<void>
+      }>
+    }>
+  }
+
+  const pickerWindow = window as SavePickerWindow
+  if (typeof pickerWindow.showSaveFilePicker === 'function') {
+    const handle = await pickerWindow.showSaveFilePicker({
+      suggestedName: fileName,
+      excludeAcceptAllOption: true,
+      types: [
+        {
+          description: 'PDF',
+          accept: { 'application/pdf': ['.pdf'] },
+        },
+      ],
+    })
+    const writable = await handle.createWritable()
+    await writable.write(blob)
+    await writable.close()
+    return 'picker'
+  }
+
+  const blobUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = blobUrl
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 8_000)
+  return 'download'
 }
 
 function validateGuestForm(
@@ -459,7 +585,6 @@ function buildExportDocumentHtml(params: {
 }): string {
   const { stays, year, month, apartmentLabel, outputMode } = params
   const monthLabel = monthLabelByValue[String(month)] ?? `Mês ${month}`
-  const suggestedBaseName = `registos-${toFileNameSegment(apartmentLabel || 'todos')}-${toFileNameSegment(monthLabel)}-${year}`
   const reservedDays = buildReservedDaysSet(stays, year, month)
   const monthStartWeekday = (new Date(year, month - 1, 1).getDay() + 6) % 7
   const daysInMonth = new Date(year, month, 0).getDate()
@@ -487,22 +612,22 @@ function buildExportDocumentHtml(params: {
 
       return `
         <article class="record">
-          <p class="record-line line-1">
-            <span><strong>Nome:</strong> ${escapeHtml(stay.guest_name)}</span>
-            <span><strong>Telefone:</strong> ${escapeHtml(stay.guest_phone || '-')}</span>
-          </p>
-          <p class="record-line line-2">
-            <span><strong>Entrada:</strong> ${escapeHtml(formatDateForPdf(stay.check_in))}</span>
-            <span><strong>Saída:</strong> ${escapeHtml(formatDateForPdf(stay.check_out))}</span>
-            <span><strong>Noites:</strong> ${nights}</span>
-          </p>
-          <p class="record-line line-3">
-            <span><strong>Morada:</strong> ${escapeHtml(stay.guest_address || '-')}</span>
-            <span><strong>Email:</strong> ${escapeHtml(stay.guest_email || '-')}</span>
-            <span><strong>Nº Pessoas:</strong> ${stay.people_count}</span>
-            <span><strong>Roupa:</strong> ${escapeHtml(stay.linen ?? '-')}</span>
-          </p>
-          <p class="record-line line-4"><strong>Notas:</strong> ${escapeHtml(notes)}</p>
+          <h3 class="record-name">${escapeHtml(stay.guest_name)}</h3>
+          <div class="record-dates">
+            <p class="record-entry"><strong>Entrada:</strong> ${escapeHtml(formatDateForPdf(stay.check_in))}</p>
+            <p class="record-exit"><strong>Saída:</strong> ${escapeHtml(formatDateForPdf(stay.check_out))}</p>
+          </div>
+          <div class="record-row">
+            <p><strong>Telefone:</strong> ${escapeHtml(stay.guest_phone || '-')}</p>
+            <p><strong>Email:</strong> ${escapeHtml(stay.guest_email || '-')}</p>
+            <p><strong>Morada:</strong> ${escapeHtml(stay.guest_address || '-')}</p>
+          </div>
+          <div class="record-row">
+            <p><strong>Noites:</strong> ${nights}</p>
+            <p><strong>Nº de Pessoas:</strong> ${stay.people_count}</p>
+            <p><strong>Roupa:</strong> ${escapeHtml(stay.linen ?? '-')}</p>
+          </div>
+          <p class="record-notes"><strong>Notas:</strong> ${escapeHtml(notes)}</p>
         </article>
       `
     })
@@ -512,7 +637,7 @@ function buildExportDocumentHtml(params: {
 <html lang="pt-PT">
   <head>
     <meta charset="utf-8" />
-    <title>${escapeHtml(suggestedBaseName)}</title>
+    <title>Exportação ${escapeHtml(monthLabel)} ${year}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap');
@@ -540,12 +665,12 @@ function buildExportDocumentHtml(params: {
       }
       .header h1 {
         margin: 0;
-        font-size: 20px;
+        font-size: 34px;
         letter-spacing: 0.03em;
       }
       .header p {
         margin: 0;
-        font-size: 12px;
+        font-size: 20px;
         color: #42586d;
       }
       .calendar {
@@ -556,7 +681,7 @@ function buildExportDocumentHtml(params: {
       .calendar th {
         padding: 4px 3px;
         border: 1px solid #d7e2ef;
-        font-size: 10px;
+        font-size: 17px;
         text-transform: uppercase;
         letter-spacing: 0.04em;
         background: #edf4fb;
@@ -566,7 +691,7 @@ function buildExportDocumentHtml(params: {
         text-align: right;
         padding: 2px 4px;
         border: 1px solid #d7e2ef;
-        font-size: 10px;
+        font-size: 17px;
       }
       .calendar .day.empty {
         background: #f7f9fc;
@@ -578,43 +703,60 @@ function buildExportDocumentHtml(params: {
       }
       .records {
         display: grid;
-        gap: 5px;
+        gap: 6px;
       }
       .record {
-        padding: 5px 7px;
-        border: 1px solid #ccd8e6;
-        border-radius: 10px;
-        background: #f8fbff;
+        padding: 8px 10px;
+        border: 1px solid #5e6771;
+        border-radius: 13px;
+        background: #ffffff;
         page-break-inside: avoid;
       }
-      .record-line {
+      .record-name {
+        margin: 0 0 4px;
+        color: #0d56a6;
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.15;
+        letter-spacing: 0.01em;
+      }
+      .record p {
         margin: 0;
-        font-size: 11px;
-        color: #30485f;
+        font-size: 18px;
+        color: #2d3136;
+        line-height: 1.2;
       }
-      .record-line strong {
-        color: #0f3354;
+      .record strong {
+        color: #3c3f44;
+        font-weight: 700;
       }
-      .line-1 {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 4px 10px;
-      }
-      .line-2 {
+      .record-dates {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 4px 10px;
+        margin-bottom: 4px;
       }
-      .line-3 {
+      .record-entry {
+        grid-column: 1;
+      }
+      .record-exit {
+        grid-column: 2;
+      }
+      .record-row {
         display: grid;
-        grid-template-columns: 1.25fr 1.25fr 0.65fr 0.65fr;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 4px 10px;
+        margin-bottom: 4px;
       }
-      .line-4 {
-        margin-top: 2px;
+      .record-dates p,
+      .record-row p,
+      .record-notes {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+      .record-notes {
+        min-height: 14px;
       }
     </style>
   </head>
@@ -622,9 +764,7 @@ function buildExportDocumentHtml(params: {
     <main class="sheet">
       <header class="header">
         <h1>${escapeHtml(monthLabel)} ${year}</h1>
-        <p>Apartamento: ${escapeHtml(apartmentLabel)} | Registos: ${stays.length} | Saída: ${
-          outputMode === 'pdf' ? 'PDF' : 'Impressão'
-        }</p>
+        <p>Apartamento: ${escapeHtml(apartmentLabel)} | Registos: ${stays.length}</p>
       </header>
       <table class="calendar" aria-label="Calendário de reservas">
         <thead>
@@ -638,12 +778,16 @@ function buildExportDocumentHtml(params: {
         ${rowsHtml}
       </section>
     </main>
-    <script>
+    ${
+      outputMode === 'print'
+        ? `<script>
       window.addEventListener('load', () => {
         setTimeout(() => window.print(), 150);
       });
       window.addEventListener('afterprint', () => window.close());
-    </script>
+    </script>`
+        : ''
+    }
   </body>
 </html>`
 }
@@ -675,6 +819,10 @@ export default function Apartments() {
   const [exportLoading, setExportLoading] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportOptionsOpen, setExportOptionsOpen] = useState(false)
+  const [pendingPdfExport, setPendingPdfExport] = useState<PendingPdfExport | null>(null)
+  const [pdfFileName, setPdfFileName] = useState('')
+  const [pdfDialogError, setPdfDialogError] = useState<string | null>(null)
+  const [savingPdf, setSavingPdf] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
@@ -743,6 +891,16 @@ export default function Apartments() {
       document.removeEventListener('mousedown', handleOutsideClick)
     }
   }, [menuOpen])
+
+  useEffect(() => {
+    if (!notice) return
+    const timeoutId = window.setTimeout(() => {
+      setNotice(null)
+    }, 5000)
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [notice])
 
   useEffect(() => {
     if (!exportOptionsOpen) return
@@ -947,6 +1105,8 @@ export default function Apartments() {
   const handleOpenConsult = () => {
     setMenuOpen(false)
     setExportOptionsOpen(false)
+    setPendingPdfExport(null)
+    setPdfDialogError(null)
     setPanelMode('consult')
     setConsultOpen(true)
     setConsultError(null)
@@ -956,6 +1116,8 @@ export default function Apartments() {
   const handleOpenExport = () => {
     setMenuOpen(false)
     setExportOptionsOpen(false)
+    setPendingPdfExport(null)
+    setPdfDialogError(null)
     setPanelMode('export')
     setConsultOpen(true)
     setConsultError(null)
@@ -974,6 +1136,8 @@ export default function Apartments() {
     setConsultError(null)
     setExportError(null)
     setExportOptionsOpen(false)
+    setPendingPdfExport(null)
+    setPdfDialogError(null)
   }
 
   const handleConsult = async (event: FormEvent<HTMLFormElement>) => {
@@ -1034,12 +1198,6 @@ export default function Apartments() {
       return
     }
 
-    const printWindow = window.open('about:blank', '_blank')
-    if (!printWindow) {
-      setExportError('Não foi possível abrir a janela de impressão. Verifica o bloqueador de popups.')
-      return
-    }
-
     setExportLoading(true)
     setExportHasRun(true)
     try {
@@ -1047,7 +1205,6 @@ export default function Apartments() {
       setExportResults(filteredResults)
 
       if (filteredResults.length === 0) {
-        printWindow.close()
         setExportError('Sem registos para exportar com os filtros aplicados.')
         return
       }
@@ -1056,6 +1213,7 @@ export default function Apartments() {
         ? apartments.find((apartment) => apartment.id === filters.apartmentId)?.name ??
           'Apartamento desconhecido'
         : 'Todos'
+      const fileName = buildExportFileName(apartmentLabel, filters.month, filters.year)
 
       const html = buildExportDocumentHtml({
         stays: filteredResults,
@@ -1065,20 +1223,83 @@ export default function Apartments() {
         outputMode,
       })
 
-      printWindow.document.open()
-      printWindow.document.write(html)
-      printWindow.document.close()
-      if (outputMode === 'pdf') {
-        setNotice('Janela preparada. No diálogo, escolhe "Guardar em PDF", nomeia o ficheiro e seleciona o destino.')
-      } else {
+      if (outputMode === 'print') {
+        const printWindow = window.open('about:blank', '_blank')
+        if (!printWindow) {
+          setExportError('Não foi possível abrir a janela de impressão. Verifica o bloqueador de popups.')
+          return
+        }
+        printWindow.document.open()
+        printWindow.document.write(html)
+        printWindow.document.close()
         setNotice('Janela de impressão preparada. Seleciona a impressora e confirma.')
+      } else {
+        setPdfDialogError(null)
+        setPdfFileName(fileName)
+        setPendingPdfExport({
+          stays: filteredResults,
+          year: filters.year,
+          month: filters.month,
+          apartmentLabel,
+        })
       }
     } catch (error) {
-      printWindow.close()
       logError('Erro na exportação de registos', error)
       setExportError(toPublicErrorMessage(error, 'Erro ao exportar registos.'))
     } finally {
       setExportLoading(false)
+    }
+  }
+
+  const handleCancelPdfSave = () => {
+    if (savingPdf) return
+    setPdfDialogError(null)
+    setPendingPdfExport(null)
+    setPdfFileName('')
+  }
+
+  const handleConfirmPdfSave = async () => {
+    if (!pendingPdfExport) return
+
+    const safeBaseName = pdfFileName
+      .replace(/\.pdf$/i, '')
+      .replace(/[\\/:*?"<>|]+/g, '-')
+      .trim()
+    if (!safeBaseName) {
+      setPdfDialogError('Nome do ficheiro inválido.')
+      return
+    }
+    const finalFileName = `${safeBaseName}.pdf`
+
+    setSavingPdf(true)
+    setPdfDialogError(null)
+    setExportError(null)
+    setNotice(null)
+    try {
+      const html = buildExportDocumentHtml({
+        stays: pendingPdfExport.stays,
+        year: pendingPdfExport.year,
+        month: pendingPdfExport.month,
+        apartmentLabel: pendingPdfExport.apartmentLabel,
+        outputMode: 'pdf',
+      })
+
+      const pdfBlob = await buildPdfBlobFromHtml(html)
+      const saveMethod = await savePdfBlob(pdfBlob, finalFileName)
+      if (saveMethod === 'picker') {
+        setNotice('PDF gravado com sucesso no local escolhido.')
+      } else {
+        setNotice(
+          'PDF transferido. Se não apareceu a escolha de pasta, ativa no browser a opção para perguntar onde guardar cada transferência.',
+        )
+      }
+      setPendingPdfExport(null)
+      setPdfFileName('')
+    } catch (error) {
+      logError('Erro ao gravar PDF', error)
+      setPdfDialogError(toPublicErrorMessage(error, 'Não foi possível gravar o PDF.'))
+    } finally {
+      setSavingPdf(false)
     }
   }
 
@@ -1095,6 +1316,9 @@ export default function Apartments() {
     setExportHasRun(false)
     setExportError(null)
     setExportOptionsOpen(false)
+    setPendingPdfExport(null)
+    setPdfDialogError(null)
+    setPdfFileName('')
   }
 
   const handleOpenConsultResult = (stay: StayWithApartment) => {
@@ -1634,6 +1858,53 @@ export default function Apartments() {
                 disabled={deletingStay}
               >
                 {deletingStay ? 'A eliminar...' : 'Eliminar registo'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {pendingPdfExport && (
+        <div className="editor-backdrop" onClick={handleCancelPdfSave}>
+          <section
+            className="confirm-panel export-file-panel"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3>Guardar PDF</h3>
+            <p>Define o nome do ficheiro e confirma a gravação.</p>
+            <label>
+              Nome do ficheiro
+              <input
+                type="text"
+                value={pdfFileName}
+                onChange={(event) => {
+                  setPdfFileName(event.target.value)
+                  setPdfDialogError(null)
+                }}
+                autoFocus
+              />
+            </label>
+            <p className="dialog-help">
+              Em alguns browsers, a escolha da pasta depende da opção de download "Perguntar onde
+              guardar cada ficheiro".
+            </p>
+            {pdfDialogError && <p className="error">{pdfDialogError}</p>}
+            <div className="confirm-actions">
+              <button
+                type="button"
+                className="secondary"
+                onClick={handleCancelPdfSave}
+                disabled={savingPdf}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleConfirmPdfSave()
+                }}
+                disabled={savingPdf}
+              >
+                {savingPdf ? 'A gravar...' : 'Guardar PDF'}
               </button>
             </div>
           </section>
