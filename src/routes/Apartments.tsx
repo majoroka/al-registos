@@ -988,7 +988,7 @@ export default function Apartments() {
       return
     }
 
-    const printWindow = window.open('', '_blank', 'noopener,noreferrer')
+    const printWindow = window.open('about:blank', '_blank')
     if (!printWindow) {
       setExportError('Não foi possível abrir a janela de impressão. Verifica o bloqueador de popups.')
       return
