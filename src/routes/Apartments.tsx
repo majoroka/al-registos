@@ -395,57 +395,12 @@ export default function Apartments() {
     setEditorMode('create')
   }
 
-  const handleOpenCustomerHistory = async (stay: StayWithApartment) => {
-    const phone = stay.guest_phone.trim()
-    const email = stay.guest_email.trim().toLowerCase()
-    const name = stay.guest_name.trim().toLowerCase()
-
-    if (!phone && !email && !name) {
-      setHistoryError('Sem dados suficientes para consultar histórico.')
-      setHistoryOpen(true)
-      return
-    }
-
-    setHistoryReference(phone || email || stay.guest_name)
+  const handleOpenCustomerHistory = (stay: StayWithApartment) => {
     setHistoryError(null)
+    setHistoryReference(stay.guest_name)
+    setHistoryResults([stay])
+    setHistoryLoading(false)
     setHistoryOpen(true)
-    setHistoryLoading(true)
-
-    try {
-      const allStays = await listStays({})
-      const matches = allStays
-        .filter((item) => {
-          const itemPhone = item.guest_phone.trim()
-          const itemEmail = item.guest_email.trim().toLowerCase()
-          const itemName = item.guest_name.trim().toLowerCase()
-
-          const phoneMatch = phone && itemPhone === phone
-          const emailMatch = email && itemEmail === email
-          const fallbackNameMatch = !phone && !email && name && itemName === name
-
-          return phoneMatch || emailMatch || fallbackNameMatch
-        })
-        .sort((left, right) => {
-          const leftTime = left.check_in
-            ? new Date(`${left.check_in}T00:00:00`).getTime()
-            : Number.NEGATIVE_INFINITY
-          const rightTime = right.check_in
-            ? new Date(`${right.check_in}T00:00:00`).getTime()
-            : Number.NEGATIVE_INFINITY
-
-          if (leftTime !== rightTime) return rightTime - leftTime
-          if (left.year !== right.year) return right.year - left.year
-          return right.id - left.id
-        })
-
-      setHistoryResults(matches)
-    } catch (error) {
-      logError('Erro ao consultar histórico do cliente', error)
-      setHistoryError(toPublicErrorMessage(error, 'Erro ao consultar histórico.'))
-      setHistoryResults([])
-    } finally {
-      setHistoryLoading(false)
-    }
   }
 
   const handleRequestDeleteStay = (stay: StayWithApartment) => {
@@ -869,7 +824,7 @@ export default function Apartments() {
           <section className="history-panel" onClick={(event) => event.stopPropagation()}>
             <div className="history-header">
               <div>
-                <h3>Histórico do cliente</h3>
+                <h3>Consulta do registo</h3>
                 <p>{historyReference}</p>
               </div>
               <button type="button" onClick={() => setHistoryOpen(false)}>
@@ -880,9 +835,9 @@ export default function Apartments() {
             {historyError && <p className="error">{historyError}</p>}
 
             {historyLoading ? (
-              <p>A consultar histórico...</p>
+              <p>A carregar registo...</p>
             ) : historyResults.length === 0 ? (
-              <p className="empty-state">Sem histórico para este cliente.</p>
+              <p className="empty-state">Sem dados para o registo selecionado.</p>
             ) : (
               <ul className="history-list">
                 {historyResults.map((stay) => (
