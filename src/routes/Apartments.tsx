@@ -310,8 +310,8 @@ async function buildPdfBlobFromHtml(html: string): Promise<Blob> {
     })
     const pageWidth = pdf.internal.pageSize.getWidth()
     const pageHeight = pdf.internal.pageSize.getHeight()
-    const marginX = 5
-    const marginY = 5
+    const marginX = 15
+    const marginY = 15
     const usableWidth = pageWidth - marginX * 2
     const usableHeight = pageHeight - marginY * 2
     const ratio = Math.min(usableWidth / canvas.width, usableHeight / canvas.height)
@@ -643,7 +643,7 @@ function buildExportDocumentHtml(params: {
       @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap');
       @page {
         size: A4;
-        margin: 8mm;
+        margin: 15mm;
       }
       * {
         box-sizing: border-box;
@@ -665,12 +665,12 @@ function buildExportDocumentHtml(params: {
       }
       .header h1 {
         margin: 0;
-        font-size: 28px;
+        font-size: 25px;
         letter-spacing: 0.03em;
       }
       .header p {
         margin: 0;
-        font-size: 17px;
+        font-size: 15px;
         color: #42586d;
       }
       .calendar {
@@ -681,7 +681,7 @@ function buildExportDocumentHtml(params: {
       .calendar th {
         padding: 4px 3px;
         border: 1px solid #d7e2ef;
-        font-size: 14px;
+        font-size: 13px;
         text-transform: uppercase;
         letter-spacing: 0.04em;
         background: #edf4fb;
@@ -691,7 +691,7 @@ function buildExportDocumentHtml(params: {
         text-align: right;
         padding: 2px 4px;
         border: 1px solid #d7e2ef;
-        font-size: 14px;
+        font-size: 13px;
       }
       .calendar .day.empty {
         background: #f7f9fc;
@@ -715,14 +715,14 @@ function buildExportDocumentHtml(params: {
       .record-name {
         margin: 0 0 4px;
         color: #0d56a6;
-        font-size: 18px;
+        font-size: 16px;
         font-weight: 700;
         line-height: 1.15;
         letter-spacing: 0.01em;
       }
       .record p {
         margin: 0;
-        font-size: 15px;
+        font-size: 14px;
         color: #2d3136;
         line-height: 1.2;
       }
