@@ -665,12 +665,12 @@ function buildExportDocumentHtml(params: {
       }
       .header h1 {
         margin: 0;
-        font-size: 34px;
+        font-size: 28px;
         letter-spacing: 0.03em;
       }
       .header p {
         margin: 0;
-        font-size: 20px;
+        font-size: 17px;
         color: #42586d;
       }
       .calendar {
@@ -681,7 +681,7 @@ function buildExportDocumentHtml(params: {
       .calendar th {
         padding: 4px 3px;
         border: 1px solid #d7e2ef;
-        font-size: 17px;
+        font-size: 14px;
         text-transform: uppercase;
         letter-spacing: 0.04em;
         background: #edf4fb;
@@ -691,7 +691,7 @@ function buildExportDocumentHtml(params: {
         text-align: right;
         padding: 2px 4px;
         border: 1px solid #d7e2ef;
-        font-size: 17px;
+        font-size: 14px;
       }
       .calendar .day.empty {
         background: #f7f9fc;
@@ -715,14 +715,14 @@ function buildExportDocumentHtml(params: {
       .record-name {
         margin: 0 0 4px;
         color: #0d56a6;
-        font-size: 22px;
+        font-size: 18px;
         font-weight: 700;
         line-height: 1.15;
         letter-spacing: 0.01em;
       }
       .record p {
         margin: 0;
-        font-size: 18px;
+        font-size: 15px;
         color: #2d3136;
         line-height: 1.2;
       }
