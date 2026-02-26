@@ -85,14 +85,14 @@ const apartmentCardLicenseByName: Record<string, string> = {
 }
 
 const exportStayPalette: StayColor[] = [
-  { fill: '#e9f2ff', border: '#7ca8dc', text: '#183d66' },
-  { fill: '#eafaf2', border: '#7ab896', text: '#1e5136' },
-  { fill: '#fff3e7', border: '#d7aa72', text: '#62421a' },
-  { fill: '#f1ecff', border: '#9f8adf', text: '#3f3270' },
-  { fill: '#ffecef', border: '#d998a5', text: '#6d2f3a' },
-  { fill: '#e9fbfb', border: '#78b9bb', text: '#1d5659' },
-  { fill: '#f8f8e7', border: '#b8b877', text: '#525226' },
-  { fill: '#eef3f7', border: '#92a5b8', text: '#34495e' },
+  { fill: '#cfe2ff', border: '#4f7fc7', text: '#133e77' },
+  { fill: '#d1f0d6', border: '#4d9b67', text: '#1a5a2f' },
+  { fill: '#ffe2bd', border: '#c8853a', text: '#7b4a12' },
+  { fill: '#e3d5ff', border: '#7b63c4', text: '#3f2d7f' },
+  { fill: '#ffd7e1', border: '#c2647d', text: '#7a1f3c' },
+  { fill: '#cdeef1', border: '#3f98a2', text: '#195e66' },
+  { fill: '#e4efc7', border: '#869f38', text: '#495b15' },
+  { fill: '#ffd6c7', border: '#c87252', text: '#7a321c' },
 ]
 
 const emptyForm: GuestForm = {
@@ -275,6 +275,13 @@ function toFileNameSegment(value: string): string {
 
 function getColorForStay(index: number): StayColor {
   return exportStayPalette[index % exportStayPalette.length]
+}
+
+function toIsoDayKey(date: Date): string {
+  const year = String(date.getFullYear())
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function buildExportFileName(apartmentLabel: string, month: number, year: number): string {
@@ -574,7 +581,7 @@ function groupStaysForExport(
     }))
 }
 
-function addUniqueDayStay(map: Map<number, number[]>, day: number, stayId: number): void {
+function addUniqueDayStay(map: Map<string, number[]>, day: string, stayId: number): void {
   const existing = map.get(day)
   if (!existing) {
     map.set(day, [stayId])
@@ -604,70 +611,75 @@ function buildCalendarDayStyles(
   year: number,
   month: number,
   colorByStayId: Map<number, StayColor>,
-): Map<number, { className: string; style: string }> {
-  const dayStyles = new Map<number, { className: string; style: string }>()
-  const occupancyByDay = new Map<number, number[]>()
-  const arrivalsByDay = new Map<number, number[]>()
-  const departuresByDay = new Map<number, number[]>()
+): Map<string, { className: string; style: string }> {
+  const dayStyles = new Map<string, { className: string; style: string }>()
+  const occupancyByDay = new Map<string, number[]>()
+  const arrivalsByDay = new Map<string, number[]>()
+  const departuresByDay = new Map<string, number[]>()
   const monthStart = new Date(year, month - 1, 1)
-  const monthEnd = new Date(year, month, 1)
+  const monthStartWeekday = (monthStart.getDay() + 6) % 7
+  const gridStart = new Date(year, month - 1, 1 - monthStartWeekday)
+  const gridEnd = addDays(gridStart, 42)
 
   for (const stay of stays) {
-    const stayColor = colorByStayId.get(stay.id)
-    if (!stayColor) continue
     const interval = getStayInterval(stay)
     const checkInDate = parseDateSafe(stay.check_in)
     const checkOutDate = parseDateSafe(stay.check_out)
 
-    if (checkInDate && checkInDate.getFullYear() === year && checkInDate.getMonth() + 1 === month) {
-      addUniqueDayStay(arrivalsByDay, checkInDate.getDate(), stay.id)
+    if (checkInDate && checkInDate >= gridStart && checkInDate < gridEnd) {
+      addUniqueDayStay(arrivalsByDay, toIsoDayKey(checkInDate), stay.id)
     }
-    if (checkOutDate && checkOutDate.getFullYear() === year && checkOutDate.getMonth() + 1 === month) {
-      addUniqueDayStay(departuresByDay, checkOutDate.getDate(), stay.id)
+    if (checkOutDate && checkOutDate >= gridStart && checkOutDate < gridEnd) {
+      addUniqueDayStay(departuresByDay, toIsoDayKey(checkOutDate), stay.id)
     }
 
-    if (!interval || !intervalOverlaps(interval.start, interval.end, monthStart, monthEnd)) continue
+    if (!interval || !intervalOverlaps(interval.start, interval.end, gridStart, gridEnd)) continue
 
-    const overlapStart = interval.start > monthStart ? interval.start : monthStart
-    const overlapEnd = interval.end < monthEnd ? interval.end : monthEnd
+    const overlapStart = interval.start > gridStart ? interval.start : gridStart
+    const overlapEnd = interval.end < gridEnd ? interval.end : gridEnd
     const cursor = new Date(overlapStart)
 
     while (cursor < overlapEnd) {
-      addUniqueDayStay(occupancyByDay, cursor.getDate(), stay.id)
+      addUniqueDayStay(occupancyByDay, toIsoDayKey(cursor), stay.id)
       cursor.setDate(cursor.getDate() + 1)
     }
   }
 
-  for (let day = 1; day <= new Date(year, month, 0).getDate(); day += 1) {
-    const occupiedIds = occupancyByDay.get(day) ?? []
-    const arrivalIds = arrivalsByDay.get(day) ?? []
-    const departureIds = departuresByDay.get(day) ?? []
+  for (let index = 0; index < 42; index += 1) {
+    const dayDate = addDays(gridStart, index)
+    const dayKey = toIsoDayKey(dayDate)
+    const occupiedIds = occupancyByDay.get(dayKey) ?? []
+    const arrivalIds = arrivalsByDay.get(dayKey) ?? []
+    const departureIds = departuresByDay.get(dayKey) ?? []
+    const isOutsideMonth = dayDate.getMonth() + 1 !== month || dayDate.getFullYear() !== year
+
+    if (occupiedIds.length === 0) continue
+
     const departureId = departureIds[0] ?? null
     const arrivalId = arrivalIds.find((id) => id !== departureId) ?? arrivalIds[0] ?? null
+    const solidDayTextColor = '#ffffff'
 
     if (departureId !== null && arrivalId !== null && departureId !== arrivalId) {
       const depColor = colorByStayId.get(departureId)
       const arrColor = colorByStayId.get(arrivalId)
       if (depColor && arrColor) {
-        dayStyles.set(day, {
-          className: 'turnover',
-          style: `background: linear-gradient(135deg, ${depColor.fill} 0%, ${depColor.fill} 49%, ${arrColor.fill} 51%, ${arrColor.fill} 100%); border-color: ${arrColor.border}; color: #12395f;`,
+        dayStyles.set(dayKey, {
+          className: isOutsideMonth ? 'turnover spillover' : 'turnover',
+          style: `background: linear-gradient(135deg, ${depColor.border} 0%, ${depColor.border} 49%, ${arrColor.border} 51%, ${arrColor.border} 100%); border-color: ${arrColor.border}; color: ${solidDayTextColor};`,
         })
         continue
       }
     }
 
-    if (occupiedIds.length === 0) continue
-
     const colors = occupiedIds
-      .map((id) => colorByStayId.get(id)?.fill)
+      .map((id) => colorByStayId.get(id)?.border)
       .filter((value): value is string => Boolean(value))
     const primaryColor = colorByStayId.get(occupiedIds[0])
     if (!primaryColor || colors.length === 0) continue
 
-    dayStyles.set(day, {
-      className: 'occupied',
-      style: `background: ${buildMultiColorGradient(colors)}; border-color: ${primaryColor.border}; color: ${primaryColor.text};`,
+    dayStyles.set(dayKey, {
+      className: isOutsideMonth ? 'occupied spillover' : 'occupied',
+      style: `background: ${buildMultiColorGradient(colors)}; border-color: ${primaryColor.border}; color: ${solidDayTextColor};`,
     })
   }
 
@@ -682,26 +694,47 @@ function buildExportDocumentHtml(params: {
   outputMode: ExportOutputMode
 }): string {
   const { stays, year, month, apartmentLabel, outputMode } = params
+  const orderedStays = [...stays].sort((left, right) => {
+    const leftInterval = getStayInterval(left)
+    const rightInterval = getStayInterval(right)
+    const leftStart =
+      leftInterval?.start.getTime() ??
+      parseDateSafe(left.check_out)?.getTime() ??
+      new Date(left.year, 0, 1).getTime()
+    const rightStart =
+      rightInterval?.start.getTime() ??
+      parseDateSafe(right.check_out)?.getTime() ??
+      new Date(right.year, 0, 1).getTime()
+    if (leftStart !== rightStart) return leftStart - rightStart
+
+    const leftEnd = leftInterval?.end.getTime() ?? Number.MAX_SAFE_INTEGER
+    const rightEnd = rightInterval?.end.getTime() ?? Number.MAX_SAFE_INTEGER
+    if (leftEnd !== rightEnd) return leftEnd - rightEnd
+
+    return left.id - right.id
+  })
   const monthLabel = monthLabelByValue[String(month)] ?? `Mês ${month}`
   const colorByStayId = new Map<number, StayColor>()
-  stays.forEach((stay, index) => {
+  orderedStays.forEach((stay, index) => {
     colorByStayId.set(stay.id, getColorForStay(index))
   })
-  const dayStyles = buildCalendarDayStyles(stays, year, month, colorByStayId)
+  const dayStyles = buildCalendarDayStyles(orderedStays, year, month, colorByStayId)
   const monthStartWeekday = (new Date(year, month - 1, 1).getDay() + 6) % 7
-  const daysInMonth = new Date(year, month, 0).getDate()
+  const gridStart = new Date(year, month - 1, 1 - monthStartWeekday)
   const weekdayHeaders = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
   const totalCells = 42
 
   const calendarCells = Array.from({ length: totalCells }, (_, index) => {
-    const dayNumber = index - monthStartWeekday + 1
-    if (dayNumber < 1 || dayNumber > daysInMonth) {
-      return '<td class="day empty"></td>'
-    }
-    const paint = dayStyles.get(dayNumber)
-    const className = paint ? `day ${paint.className}` : 'day'
+    const cellDate = addDays(gridStart, index)
+    const dayKey = toIsoDayKey(cellDate)
+    const isOutsideMonth = cellDate.getMonth() + 1 !== month || cellDate.getFullYear() !== year
+    const paint = dayStyles.get(dayKey)
+    const classNames = ['day']
+    if (isOutsideMonth) classNames.push('outside')
+    if (paint) classNames.push(paint.className)
+    const className = classNames.join(' ')
     const styleAttr = paint ? ` style="${paint.style}"` : ''
-    return `<td class="${className}"${styleAttr}>${dayNumber}</td>`
+    return `<td class="${className}"${styleAttr}>${cellDate.getDate()}</td>`
   })
 
   const calendarRows = Array.from({ length: 6 }, (_, rowIndex) => {
@@ -709,7 +742,7 @@ function buildExportDocumentHtml(params: {
     return `<tr>${calendarCells.slice(start, start + 7).join('')}</tr>`
   }).join('')
 
-  const rowsHtml = stays
+  const rowsHtml = orderedStays
     .map((stay, index) => {
       const nights = calculateNights(stay.check_in ?? '', stay.check_out ?? '') ?? stay.nights_count
       const notes = stay.notes?.trim() ? stay.notes : '-'
@@ -783,32 +816,54 @@ function buildExportDocumentHtml(params: {
         font-size: 15px;
         color: #42586d;
       }
+      .calendar-wrap {
+        border: 1px solid #c7d5e4;
+        border-radius: 12px;
+        background: linear-gradient(160deg, #f7fbff, #eef4fb);
+        padding: 6px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+      }
       .calendar {
         width: 100%;
-        border-collapse: collapse;
+        border-collapse: separate;
+        border-spacing: 2px;
         table-layout: fixed;
       }
       .calendar th {
         padding: 4px 3px;
-        border: 1px solid #d7e2ef;
-        font-size: 13px;
+        border: 1px solid #cedaea;
+        border-radius: 7px;
+        font-size: 12px;
         text-transform: uppercase;
         letter-spacing: 0.04em;
-        background: #edf4fb;
+        background: linear-gradient(180deg, #ebf2fb, #dce8f6);
+        color: #244465;
       }
       .calendar .day {
-        height: 20px;
+        height: 22px;
         text-align: right;
-        padding: 2px 4px;
-        border: 1px solid #d7e2ef;
-        font-size: 13px;
+        padding: 2px 5px;
+        border: 0;
+        border-radius: 7px;
+        font-size: 12px;
+        font-weight: 600;
+        background: #ffffff;
+        color: #28415d;
       }
-      .calendar .day.empty {
-        background: #f7f9fc;
+      .calendar .day.outside {
+        background: #f4f7fb;
+        color: #9aa8b7;
       }
       .calendar .day.occupied,
       .calendar .day.turnover {
         font-weight: 700;
+        box-shadow: none;
+        text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+      }
+      .calendar-meta {
+        margin-top: 4px;
+        font-size: 11px;
+        color: #5d7389;
       }
       .records {
         display: grid;
@@ -825,9 +880,9 @@ function buildExportDocumentHtml(params: {
       .record-dot {
         position: absolute;
         right: 10px;
-        top: 9px;
-        width: 13px;
-        height: 13px;
+        top: 7px;
+        width: 20px;
+        height: 20px;
         border-radius: 999px;
         background: var(--stay-dot, #7ca8dc);
       }
@@ -885,14 +940,17 @@ function buildExportDocumentHtml(params: {
         <h1>${escapeHtml(monthLabel)} ${year}</h1>
         <p>Apartamento: ${escapeHtml(apartmentLabel)} | Registos: ${stays.length}</p>
       </header>
-      <table class="calendar" aria-label="Calendário de reservas">
-        <thead>
-          <tr>${weekdayHeaders.map((label) => `<th>${label}</th>`).join('')}</tr>
-        </thead>
-        <tbody>
-          ${calendarRows}
-        </tbody>
-      </table>
+      <div class="calendar-wrap">
+        <table class="calendar" aria-label="Calendário de reservas">
+          <thead>
+            <tr>${weekdayHeaders.map((label) => `<th>${label}</th>`).join('')}</tr>
+          </thead>
+          <tbody>
+            ${calendarRows}
+          </tbody>
+        </table>
+        <p class="calendar-meta">Cores distintas identificam reservas. Célula diagonal indica troca no mesmo dia.</p>
+      </div>
       <section class="records">
         ${rowsHtml}
       </section>
