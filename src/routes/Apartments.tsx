@@ -54,6 +54,12 @@ type PendingPdfExport = {
   apartmentLabel: string
 }
 
+type StayColor = {
+  fill: string
+  border: string
+  text: string
+}
+
 const currentYear = new Date().getFullYear()
 const minYear = 2000
 const maxYear = currentYear + 1
@@ -77,6 +83,17 @@ const apartmentCardLicenseByName: Record<string, string> = {
   'T1 - Tropical': '8168/AL',
   'T2 - Caravela': '4668/AL',
 }
+
+const exportStayPalette: StayColor[] = [
+  { fill: '#e9f2ff', border: '#7ca8dc', text: '#183d66' },
+  { fill: '#eafaf2', border: '#7ab896', text: '#1e5136' },
+  { fill: '#fff3e7', border: '#d7aa72', text: '#62421a' },
+  { fill: '#f1ecff', border: '#9f8adf', text: '#3f3270' },
+  { fill: '#ffecef', border: '#d998a5', text: '#6d2f3a' },
+  { fill: '#e9fbfb', border: '#78b9bb', text: '#1d5659' },
+  { fill: '#f8f8e7', border: '#b8b877', text: '#525226' },
+  { fill: '#eef3f7', border: '#92a5b8', text: '#34495e' },
+]
 
 const emptyForm: GuestForm = {
   guest_name: '',
@@ -254,6 +271,10 @@ function toFileNameSegment(value: string): string {
     .replace(/[^a-zA-Z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .toLowerCase()
+}
+
+function getColorForStay(index: number): StayColor {
+  return exportStayPalette[index % exportStayPalette.length]
 }
 
 function buildExportFileName(apartmentLabel: string, month: number, year: number): string {
@@ -553,27 +574,104 @@ function groupStaysForExport(
     }))
 }
 
-function buildReservedDaysSet(stays: StayWithApartment[], year: number, month: number): Set<number> {
-  const reservedDays = new Set<number>()
+function addUniqueDayStay(map: Map<number, number[]>, day: number, stayId: number): void {
+  const existing = map.get(day)
+  if (!existing) {
+    map.set(day, [stayId])
+    return
+  }
+  if (!existing.includes(stayId)) {
+    existing.push(stayId)
+  }
+}
+
+function buildMultiColorGradient(colors: string[]): string {
+  if (colors.length === 0) return ''
+  if (colors.length === 1) return colors[0]
+
+  const stops = colors
+    .map((color, index) => {
+      const start = (100 / colors.length) * index
+      const end = (100 / colors.length) * (index + 1)
+      return `${color} ${start}%, ${color} ${end}%`
+    })
+    .join(', ')
+  return `linear-gradient(90deg, ${stops})`
+}
+
+function buildCalendarDayStyles(
+  stays: StayWithApartment[],
+  year: number,
+  month: number,
+  colorByStayId: Map<number, StayColor>,
+): Map<number, { className: string; style: string }> {
+  const dayStyles = new Map<number, { className: string; style: string }>()
+  const occupancyByDay = new Map<number, number[]>()
+  const arrivalsByDay = new Map<number, number[]>()
+  const departuresByDay = new Map<number, number[]>()
   const monthStart = new Date(year, month - 1, 1)
   const monthEnd = new Date(year, month, 1)
 
   for (const stay of stays) {
+    const stayColor = colorByStayId.get(stay.id)
+    if (!stayColor) continue
     const interval = getStayInterval(stay)
-    if (!interval) continue
-    if (!intervalOverlaps(interval.start, interval.end, monthStart, monthEnd)) continue
+    const checkInDate = parseDateSafe(stay.check_in)
+    const checkOutDate = parseDateSafe(stay.check_out)
+
+    if (checkInDate && checkInDate.getFullYear() === year && checkInDate.getMonth() + 1 === month) {
+      addUniqueDayStay(arrivalsByDay, checkInDate.getDate(), stay.id)
+    }
+    if (checkOutDate && checkOutDate.getFullYear() === year && checkOutDate.getMonth() + 1 === month) {
+      addUniqueDayStay(departuresByDay, checkOutDate.getDate(), stay.id)
+    }
+
+    if (!interval || !intervalOverlaps(interval.start, interval.end, monthStart, monthEnd)) continue
 
     const overlapStart = interval.start > monthStart ? interval.start : monthStart
     const overlapEnd = interval.end < monthEnd ? interval.end : monthEnd
     const cursor = new Date(overlapStart)
 
     while (cursor < overlapEnd) {
-      reservedDays.add(cursor.getDate())
+      addUniqueDayStay(occupancyByDay, cursor.getDate(), stay.id)
       cursor.setDate(cursor.getDate() + 1)
     }
   }
 
-  return reservedDays
+  for (let day = 1; day <= new Date(year, month, 0).getDate(); day += 1) {
+    const occupiedIds = occupancyByDay.get(day) ?? []
+    const arrivalIds = arrivalsByDay.get(day) ?? []
+    const departureIds = departuresByDay.get(day) ?? []
+    const departureId = departureIds[0] ?? null
+    const arrivalId = arrivalIds.find((id) => id !== departureId) ?? arrivalIds[0] ?? null
+
+    if (departureId !== null && arrivalId !== null && departureId !== arrivalId) {
+      const depColor = colorByStayId.get(departureId)
+      const arrColor = colorByStayId.get(arrivalId)
+      if (depColor && arrColor) {
+        dayStyles.set(day, {
+          className: 'turnover',
+          style: `background: linear-gradient(135deg, ${depColor.fill} 0%, ${depColor.fill} 49%, ${arrColor.fill} 51%, ${arrColor.fill} 100%); border-color: ${arrColor.border}; color: #12395f;`,
+        })
+        continue
+      }
+    }
+
+    if (occupiedIds.length === 0) continue
+
+    const colors = occupiedIds
+      .map((id) => colorByStayId.get(id)?.fill)
+      .filter((value): value is string => Boolean(value))
+    const primaryColor = colorByStayId.get(occupiedIds[0])
+    if (!primaryColor || colors.length === 0) continue
+
+    dayStyles.set(day, {
+      className: 'occupied',
+      style: `background: ${buildMultiColorGradient(colors)}; border-color: ${primaryColor.border}; color: ${primaryColor.text};`,
+    })
+  }
+
+  return dayStyles
 }
 
 function buildExportDocumentHtml(params: {
@@ -585,7 +683,11 @@ function buildExportDocumentHtml(params: {
 }): string {
   const { stays, year, month, apartmentLabel, outputMode } = params
   const monthLabel = monthLabelByValue[String(month)] ?? `Mês ${month}`
-  const reservedDays = buildReservedDaysSet(stays, year, month)
+  const colorByStayId = new Map<number, StayColor>()
+  stays.forEach((stay, index) => {
+    colorByStayId.set(stay.id, getColorForStay(index))
+  })
+  const dayStyles = buildCalendarDayStyles(stays, year, month, colorByStayId)
   const monthStartWeekday = (new Date(year, month - 1, 1).getDay() + 6) % 7
   const daysInMonth = new Date(year, month, 0).getDate()
   const weekdayHeaders = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
@@ -596,8 +698,10 @@ function buildExportDocumentHtml(params: {
     if (dayNumber < 1 || dayNumber > daysInMonth) {
       return '<td class="day empty"></td>'
     }
-    const reservedClass = reservedDays.has(dayNumber) ? ' reserved' : ''
-    return `<td class="day${reservedClass}">${dayNumber}</td>`
+    const paint = dayStyles.get(dayNumber)
+    const className = paint ? `day ${paint.className}` : 'day'
+    const styleAttr = paint ? ` style="${paint.style}"` : ''
+    return `<td class="${className}"${styleAttr}>${dayNumber}</td>`
   })
 
   const calendarRows = Array.from({ length: 6 }, (_, rowIndex) => {
@@ -606,12 +710,14 @@ function buildExportDocumentHtml(params: {
   }).join('')
 
   const rowsHtml = stays
-    .map((stay) => {
+    .map((stay, index) => {
       const nights = calculateNights(stay.check_in ?? '', stay.check_out ?? '') ?? stay.nights_count
       const notes = stay.notes?.trim() ? stay.notes : '-'
+      const stayColor = colorByStayId.get(stay.id) ?? getColorForStay(index)
 
       return `
-        <article class="record">
+        <article class="record" style="--stay-dot:${stayColor.border};">
+          <span class="record-dot" aria-hidden="true"></span>
           <h3 class="record-name">${escapeHtml(stay.guest_name)}</h3>
           <div class="record-dates">
             <p class="record-entry"><strong>Entrada:</strong> ${escapeHtml(formatDateForPdf(stay.check_in))}</p>
@@ -647,12 +753,16 @@ function buildExportDocumentHtml(params: {
       }
       * {
         box-sizing: border-box;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
       }
       body {
         margin: 0;
         font-family: 'Rajdhani', 'Segoe UI', sans-serif;
         color: #11283e;
         line-height: 1.2;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
       }
       .sheet {
         width: 100%;
@@ -696,9 +806,8 @@ function buildExportDocumentHtml(params: {
       .calendar .day.empty {
         background: #f7f9fc;
       }
-      .calendar .day.reserved {
-        background: #bedcff;
-        color: #063d77;
+      .calendar .day.occupied,
+      .calendar .day.turnover {
         font-weight: 700;
       }
       .records {
@@ -706,14 +815,24 @@ function buildExportDocumentHtml(params: {
         gap: 6px;
       }
       .record {
+        position: relative;
         padding: 8px 10px;
         border: 1px solid #5e6771;
         border-radius: 13px;
         background: #ffffff;
         page-break-inside: avoid;
       }
+      .record-dot {
+        position: absolute;
+        right: 10px;
+        top: 9px;
+        width: 13px;
+        height: 13px;
+        border-radius: 999px;
+        background: var(--stay-dot, #7ca8dc);
+      }
       .record-name {
-        margin: 0 0 4px;
+        margin: 0 14px 4px 0;
         color: #0d56a6;
         font-size: 16px;
         font-weight: 700;
