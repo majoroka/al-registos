@@ -102,6 +102,16 @@ function parseDateSafe(value: string | null | undefined): Date | null {
   return parsed
 }
 
+function getStayRecencyScore(stay: StayWithApartment): number {
+  const checkInDate = parseDateSafe(stay.check_in)
+  if (checkInDate) return checkInDate.getTime()
+
+  const checkOutDate = parseDateSafe(stay.check_out)
+  if (checkOutDate) return checkOutDate.getTime()
+
+  return new Date(stay.year, 11, 31).getTime()
+}
+
 function toGuestForm(stay: StayWithApartment): GuestForm {
   return {
     guest_name: stay.guest_name,
@@ -333,20 +343,26 @@ export default function Apartments() {
     setSearchingGlobal(true)
     try {
       const allStays = await listStays({})
-      const results = allStays.filter((stay) => {
-        const fields = [
-          stay.guest_name,
-          stay.guest_email,
-          stay.guest_phone,
-          stay.guest_address,
-          stay.notes ?? '',
-          stay.apartment?.name ?? '',
-          String(stay.year),
-          stay.check_in ?? '',
-          stay.check_out ?? '',
-        ]
-        return fields.some((value) => value.toLowerCase().includes(query))
-      })
+      const results = allStays
+        .filter((stay) => {
+          const fields = [
+            stay.guest_name,
+            stay.guest_email,
+            stay.guest_phone,
+            stay.guest_address,
+            stay.notes ?? '',
+            stay.apartment?.name ?? '',
+            String(stay.year),
+            stay.check_in ?? '',
+            stay.check_out ?? '',
+          ]
+          return fields.some((value) => value.toLowerCase().includes(query))
+        })
+        .sort((left, right) => {
+          const scoreDiff = getStayRecencyScore(right) - getStayRecencyScore(left)
+          if (scoreDiff !== 0) return scoreDiff
+          return right.id - left.id
+        })
       setGlobalSearchResults(results)
     } catch (error) {
       logError('Erro na pesquisa global', error)
