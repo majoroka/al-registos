@@ -693,7 +693,7 @@ function buildCalendarDayStyles(
           const baseDayColor = isOutsideMonth ? '#f4f7fb' : '#ffffff'
           dayStyles.set(dayKey, {
             className: isOutsideMonth ? 'departure spillover' : 'departure',
-            style: `background: linear-gradient(135deg, ${depColor.border} 0%, ${depColor.border} 50%, transparent 50%, transparent 100%), ${baseDayColor}; color: ${solidDayTextColor};`,
+            style: `background-color: ${baseDayColor}; background-image: linear-gradient(135deg, ${depColor.border} 0%, ${depColor.border} 50.2%, ${baseDayColor} 50.2%, ${baseDayColor} 100%); color: ${solidDayTextColor};`,
           })
         }
       }
