@@ -85,14 +85,11 @@ const apartmentCardLicenseByName: Record<string, string> = {
 }
 
 const exportStayPalette: StayColor[] = [
-  { fill: '#cfe2ff', border: '#4f7fc7', text: '#133e77' },
-  { fill: '#d1f0d6', border: '#4d9b67', text: '#1a5a2f' },
-  { fill: '#ffe2bd', border: '#c8853a', text: '#7b4a12' },
-  { fill: '#e3d5ff', border: '#7b63c4', text: '#3f2d7f' },
-  { fill: '#ffd7e1', border: '#c2647d', text: '#7a1f3c' },
-  { fill: '#cdeef1', border: '#3f98a2', text: '#195e66' },
-  { fill: '#e4efc7', border: '#869f38', text: '#495b15' },
-  { fill: '#ffd6c7', border: '#c87252', text: '#7a321c' },
+  { fill: '#5e837c', border: '#5e837c', text: '#ffffff' },
+  { fill: '#ff8786', border: '#ff8786', text: '#ffffff' },
+  { fill: '#1872cf', border: '#1872cf', text: '#ffffff' },
+  { fill: '#00acbf', border: '#00acbf', text: '#ffffff' },
+  { fill: '#ffbc08', border: '#ffbc08', text: '#1f2a33' },
 ]
 
 const emptyForm: GuestForm = {
@@ -145,9 +142,28 @@ function calculateNights(checkIn: string, checkOut: string): number | null {
 
 function parseDateSafe(value: string | null | undefined): Date | null {
   if (!value) return null
-  const parsed = new Date(`${value}T00:00:00`)
+  const normalized = value.trim()
+  if (!normalized) return null
+
+  const isoDatePrefix = normalized.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (isoDatePrefix) {
+    const [, y, m, d] = isoDatePrefix
+    const parsed = new Date(Number(y), Number(m) - 1, Number(d))
+    if (Number.isNaN(parsed.getTime())) return null
+    return parsed
+  }
+
+  const ptDate = normalized.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (ptDate) {
+    const [, d, m, y] = ptDate
+    const parsed = new Date(Number(y), Number(m) - 1, Number(d))
+    if (Number.isNaN(parsed.getTime())) return null
+    return parsed
+  }
+
+  const parsed = new Date(normalized)
   if (Number.isNaN(parsed.getTime())) return null
-  return parsed
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate())
 }
 
 function addDays(date: Date, days: number): Date {
@@ -625,12 +641,13 @@ function buildCalendarDayStyles(
     const interval = getStayInterval(stay)
     const checkInDate = parseDateSafe(stay.check_in)
     const checkOutDate = parseDateSafe(stay.check_out)
+    const departureDate = checkOutDate ?? interval?.end ?? null
 
     if (checkInDate && checkInDate >= gridStart && checkInDate < gridEnd) {
       addUniqueDayStay(arrivalsByDay, toIsoDayKey(checkInDate), stay.id)
     }
-    if (checkOutDate && checkOutDate >= gridStart && checkOutDate < gridEnd) {
-      addUniqueDayStay(departuresByDay, toIsoDayKey(checkOutDate), stay.id)
+    if (departureDate && departureDate >= gridStart && departureDate < gridEnd) {
+      addUniqueDayStay(departuresByDay, toIsoDayKey(departureDate), stay.id)
     }
 
     if (!interval || !intervalOverlaps(interval.start, interval.end, gridStart, gridEnd)) continue
@@ -653,8 +670,6 @@ function buildCalendarDayStyles(
     const departureIds = departuresByDay.get(dayKey) ?? []
     const isOutsideMonth = dayDate.getMonth() + 1 !== month || dayDate.getFullYear() !== year
 
-    if (occupiedIds.length === 0) continue
-
     const departureId = departureIds[0] ?? null
     const arrivalId = arrivalIds.find((id) => id !== departureId) ?? arrivalIds[0] ?? null
     const solidDayTextColor = '#ffffff'
@@ -665,10 +680,23 @@ function buildCalendarDayStyles(
       if (depColor && arrColor) {
         dayStyles.set(dayKey, {
           className: isOutsideMonth ? 'turnover spillover' : 'turnover',
-          style: `background: linear-gradient(135deg, ${depColor.border} 0%, ${depColor.border} 49%, ${arrColor.border} 51%, ${arrColor.border} 100%); border-color: ${arrColor.border}; color: ${solidDayTextColor};`,
+          style: `background: linear-gradient(135deg, ${depColor.border} 0%, ${depColor.border} 49%, ${arrColor.border} 51%, ${arrColor.border} 100%); color: ${solidDayTextColor};`,
         })
         continue
       }
+    }
+
+    if (occupiedIds.length === 0) {
+      if (departureId !== null) {
+        const depColor = colorByStayId.get(departureId)
+        if (depColor) {
+          dayStyles.set(dayKey, {
+            className: isOutsideMonth ? 'departure spillover' : 'departure',
+            style: `background: linear-gradient(135deg, ${depColor.border} 0%, ${depColor.border} 49%, transparent 51%, transparent 100%); color: ${solidDayTextColor};`,
+          })
+        }
+      }
+      continue
     }
 
     const colors = occupiedIds
@@ -679,7 +707,7 @@ function buildCalendarDayStyles(
 
     dayStyles.set(dayKey, {
       className: isOutsideMonth ? 'occupied spillover' : 'occupied',
-      style: `background: ${buildMultiColorGradient(colors)}; border-color: ${primaryColor.border}; color: ${solidDayTextColor};`,
+      style: `background: ${buildMultiColorGradient(colors)}; color: ${solidDayTextColor};`,
     })
   }
 
@@ -734,7 +762,7 @@ function buildExportDocumentHtml(params: {
     if (paint) classNames.push(paint.className)
     const className = classNames.join(' ')
     const styleAttr = paint ? ` style="${paint.style}"` : ''
-    return `<td class="${className}"${styleAttr}>${cellDate.getDate()}</td>`
+    return `<td class="${className}"${styleAttr}><span class="day-chip">${cellDate.getDate()}</span></td>`
   })
 
   const calendarRows = Array.from({ length: 6 }, (_, rowIndex) => {
@@ -810,16 +838,17 @@ function buildExportDocumentHtml(params: {
         margin: 0;
         font-size: 25px;
         letter-spacing: 0.03em;
+        color: #00acbf;
       }
       .header p {
         margin: 0;
         font-size: 15px;
-        color: #42586d;
+        color: #5e837c;
       }
       .calendar-wrap {
-        border: 1px solid #c7d5e4;
+        border: 1px solid #5e837c;
         border-radius: 12px;
-        background: linear-gradient(160deg, #f7fbff, #eef4fb);
+        background: linear-gradient(160deg, #5e837c1f, #00acbf1a);
         padding: 6px;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
       }
@@ -831,39 +860,63 @@ function buildExportDocumentHtml(params: {
       }
       .calendar th {
         padding: 4px 3px;
-        border: 1px solid #cedaea;
+        border: 1px solid #5e837c66;
         border-radius: 7px;
         font-size: 12px;
         text-transform: uppercase;
         letter-spacing: 0.04em;
-        background: linear-gradient(180deg, #ebf2fb, #dce8f6);
-        color: #244465;
+        background: #5e837c2b;
+        color: #2d3136;
       }
       .calendar .day {
-        height: 22px;
-        text-align: right;
-        padding: 2px 5px;
+        height: 26px;
+        text-align: center;
+        padding: 0;
         border: 0;
         border-radius: 7px;
         font-size: 12px;
         font-weight: 600;
         background: #ffffff;
-        color: #28415d;
+        color: #2d3136;
+      }
+      .calendar .day .day-chip {
+        width: 22px;
+        height: 22px;
+        margin: 0 auto;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: #ffffff;
+        color: #111111;
       }
       .calendar .day.outside {
         background: #f4f7fb;
-        color: #9aa8b7;
+      }
+      .calendar .day.outside .day-chip {
+        background: #eceff2;
+        color: #8f98a3;
       }
       .calendar .day.occupied,
       .calendar .day.turnover {
         font-weight: 700;
         box-shadow: none;
-        text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+      }
+      .calendar .day.occupied .day-chip,
+      .calendar .day.turnover .day-chip {
+        background: #ffffff;
+        color: #111111;
+        text-shadow: none;
+      }
+      .calendar .day.outside.occupied .day-chip,
+      .calendar .day.outside.turnover .day-chip {
+        background: #eceff2;
+        color: #8f98a3;
       }
       .calendar-meta {
         margin-top: 4px;
         font-size: 11px;
-        color: #5d7389;
+        color: #5e837c;
       }
       .records {
         display: grid;
@@ -872,7 +925,7 @@ function buildExportDocumentHtml(params: {
       .record {
         position: relative;
         padding: 8px 10px;
-        border: 1px solid #5e6771;
+        border: 1px solid #5e837c;
         border-radius: 13px;
         background: #ffffff;
         page-break-inside: avoid;
@@ -884,11 +937,11 @@ function buildExportDocumentHtml(params: {
         width: 20px;
         height: 20px;
         border-radius: 999px;
-        background: var(--stay-dot, #7ca8dc);
+        background: var(--stay-dot, #00acbf);
       }
       .record-name {
         margin: 0 14px 4px 0;
-        color: #0d56a6;
+        color: var(--stay-dot, #00acbf);
         font-size: 16px;
         font-weight: 700;
         line-height: 1.15;
