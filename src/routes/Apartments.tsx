@@ -88,7 +88,7 @@ const exportStayPalette: StayColor[] = [
   { fill: '#5e837c', border: '#5e837c', text: '#ffffff' },
   { fill: '#ff8786', border: '#ff8786', text: '#ffffff' },
   { fill: '#1872cf', border: '#1872cf', text: '#ffffff' },
-  { fill: '#00acbf', border: '#00acbf', text: '#ffffff' },
+  { fill: '#ff4757', border: '#ff4757', text: '#ffffff' },
   { fill: '#ffbc08', border: '#ffbc08', text: '#1f2a33' },
 ]
 
@@ -690,9 +690,10 @@ function buildCalendarDayStyles(
       if (departureId !== null) {
         const depColor = colorByStayId.get(departureId)
         if (depColor) {
+          const baseDayColor = isOutsideMonth ? '#f4f7fb' : '#ffffff'
           dayStyles.set(dayKey, {
             className: isOutsideMonth ? 'departure spillover' : 'departure',
-            style: `background: linear-gradient(135deg, ${depColor.border} 0%, ${depColor.border} 49%, transparent 51%, transparent 100%); color: ${solidDayTextColor};`,
+            style: `background: linear-gradient(135deg, ${depColor.border} 0%, ${depColor.border} 50%, transparent 50%, transparent 100%), ${baseDayColor}; color: ${solidDayTextColor};`,
           })
         }
       }
@@ -838,7 +839,7 @@ function buildExportDocumentHtml(params: {
         margin: 0;
         font-size: 25px;
         letter-spacing: 0.03em;
-        color: #00acbf;
+        color: #ff4757;
       }
       .header p {
         margin: 0;
@@ -848,7 +849,7 @@ function buildExportDocumentHtml(params: {
       .calendar-wrap {
         border: 1px solid #5e837c;
         border-radius: 12px;
-        background: linear-gradient(160deg, #5e837c1f, #00acbf1a);
+        background: linear-gradient(160deg, #5e837c1f, #ff47571a);
         padding: 6px;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
       }
@@ -937,11 +938,11 @@ function buildExportDocumentHtml(params: {
         width: 20px;
         height: 20px;
         border-radius: 999px;
-        background: var(--stay-dot, #00acbf);
+        background: var(--stay-dot, #ff4757);
       }
       .record-name {
         margin: 0 14px 4px 0;
-        color: var(--stay-dot, #00acbf);
+        color: var(--stay-dot, #ff4757);
         font-size: 16px;
         font-weight: 700;
         line-height: 1.15;
