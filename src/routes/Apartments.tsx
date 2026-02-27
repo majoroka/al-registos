@@ -88,7 +88,7 @@ const exportStayPalette: StayColor[] = [
   { fill: '#5e837c', border: '#5e837c', text: '#ffffff' },
   { fill: '#ff8786', border: '#ff8786', text: '#ffffff' },
   { fill: '#1872cf', border: '#1872cf', text: '#ffffff' },
-  { fill: '#ff4757', border: '#ff4757', text: '#ffffff' },
+  { fill: '#90c20e', border: '#90c20e', text: '#ffffff' },
   { fill: '#ffbc08', border: '#ffbc08', text: '#1f2a33' },
 ]
 
@@ -839,7 +839,7 @@ function buildExportDocumentHtml(params: {
         margin: 0;
         font-size: 25px;
         letter-spacing: 0.03em;
-        color: #ff4757;
+        color: #90c20e;
       }
       .header p {
         margin: 0;
@@ -849,7 +849,7 @@ function buildExportDocumentHtml(params: {
       .calendar-wrap {
         border: 1px solid #5e837c;
         border-radius: 12px;
-        background: linear-gradient(160deg, #5e837c1f, #ff47571a);
+        background: linear-gradient(160deg, #5e837c1f, #90c20e1a);
         padding: 6px;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
       }
@@ -938,11 +938,11 @@ function buildExportDocumentHtml(params: {
         width: 20px;
         height: 20px;
         border-radius: 999px;
-        background: var(--stay-dot, #ff4757);
+        background: var(--stay-dot, #90c20e);
       }
       .record-name {
         margin: 0 14px 4px 0;
-        color: var(--stay-dot, #ff4757);
+        color: var(--stay-dot, #90c20e);
         font-size: 16px;
         font-weight: 700;
         line-height: 1.15;
