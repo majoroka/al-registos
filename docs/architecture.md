@@ -55,6 +55,8 @@ Aplicação web para registo, consulta e emissão documental de estadias de Aloj
 - `Visualizar`
   - Mesmo layout de filtros.
   - Agrupamento visual por ano e mês para revisão em ecrã.
+  - Inclui calendário mensal acima dos registos, com a mesma lógica visual do PDF/Impressão.
+  - Mantém correspondência de cor entre célula do calendário e círculo do registo.
 - `Exportar`
   - Mesmo layout de filtros.
   - Requer ano e mês.
@@ -74,6 +76,8 @@ Aplicação web para registo, consulta e emissão documental de estadias de Aloj
 - Regras visuais:
   - cores por reserva para identificação;
   - dia com saída+entrada pode ter marcação combinada;
+  - dia de saída sem nova entrada no mesmo dia pode aparecer como meia célula;
+  - dias com número centrado em círculo (normal e spillover com estilos distintos);
   - cada registo mostra um círculo de referência de cor.
 - Pipeline PDF:
   - HTML renderizado em `iframe`;
@@ -120,3 +124,4 @@ Aplicação web para registo, consulta e emissão documental de estadias de Aloj
 - Sem suite de testes automatizados.
 - Muita lógica concentrada em `src/routes/Apartments.tsx` (candidato a modularização).
 - Exportação visual ainda em iteração de design para maximizar legibilidade/contraste.
+- Renderização de gradientes na impressão pode variar entre browsers/impressoras (ex.: Safari).

@@ -18,7 +18,7 @@ Projeto em fase inicial, mas com fluxo operacional completo para uso diário:
   - `Imprimir`
 - exportação em PDF com escolha de nome e gravação (com fallback por browser);
 - impressão com layout dedicado;
-- calendário mensal no documento de saída com marcação visual de reservas;
+- calendário mensal com marcação visual de reservas no `Visualizar`, `Exportar` e `Imprimir`;
 - migrações Supabase aplicadas e importação inicial (43 registos).
 
 ## Fluxo principal (`/apartments`)
@@ -42,10 +42,13 @@ Projeto em fase inicial, mas com fluxo operacional completo para uso diário:
   - lista de resultados com ações.
 - `Visualizar`:
   - mesmos filtros;
-  - apresentação agrupada por ano/mês para revisão em ecrã.
+  - apresentação agrupada por ano/mês para revisão em ecrã;
+  - calendário por mês com o mesmo padrão visual de PDF/Impressão;
+  - registos com círculo de cor correspondente à reserva.
 - `Exportar`:
   - mesmos filtros;
-  - exporta PDF (ano e mês obrigatórios).
+  - exporta PDF (ano e mês obrigatórios);
+  - calendário com dias em círculo, trocas no mesmo dia em diagonal e meio preenchimento no dia de saída.
 - `Imprimir`:
   - mesmos filtros;
   - abre janela de impressão com o mesmo layout base do PDF.

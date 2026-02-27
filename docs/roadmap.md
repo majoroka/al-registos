@@ -19,6 +19,7 @@ Consolidar o MVP de registo AL com operação diária estável, segurança consi
   - `Visualizar`
   - `Exportar`
   - `Imprimir`
+- [x] Painel `Visualizar` com calendário mensal acima dos registos e correspondência de cores por reserva.
 - [x] Exportação PDF e impressão com layout dedicado.
 - [x] Migrações de schema + RLS aplicadas.
 - [x] Importação histórica inicial (`clientes_AL.csv`, 43 registos).
@@ -27,6 +28,7 @@ Consolidar o MVP de registo AL com operação diária estável, segurança consi
 ## Fase 1 - Estabilização UX/UI (curto prazo)
 
 - [ ] Afinar design do calendário no documento de saída (contraste e legibilidade).
+- [ ] Fechar validação cross-browser de impressão para meias células diagonais.
 - [ ] Rever densidade tipográfica do PDF para diferentes volumes mensais.
 - [ ] Ajustar consistência visual dos estados `loading/empty/error` entre painéis.
 - [ ] Validar responsividade final dos painéis de menu em mobile.

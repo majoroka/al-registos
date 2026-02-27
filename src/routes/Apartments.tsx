@@ -1646,7 +1646,7 @@ export default function Apartments() {
             {menuOpen && (
               <div className="workspace-menu-dropdown" role="menu">
                 <button type="button" role="menuitem" onClick={handleOpenConsult}>
-                  Consultar
+                  Editar
                 </button>
                 <button type="button" role="menuitem" onClick={handleOpenVisualize}>
                   Visualizar
