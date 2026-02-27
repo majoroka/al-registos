@@ -651,6 +651,95 @@ button:hover:not(:disabled) {
   color: #1f456c;
 }
 
+.visual-calendar-wrap {
+  border: 1px solid #5e837c;
+  border-radius: 12px;
+  background: linear-gradient(160deg, #5e837c1f, #90c20e1a);
+  padding: 6px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  display: grid;
+  gap: 4px;
+}
+
+.visual-calendar {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 2px;
+  table-layout: fixed;
+}
+
+.visual-calendar th {
+  padding: 4px 3px;
+  border: 1px solid #5e837c66;
+  border-radius: 7px;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: #5e837c2b;
+  color: #2d3136;
+}
+
+.visual-calendar .day {
+  height: 26px;
+  text-align: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  background: #ffffff;
+  color: #2d3136;
+}
+
+.visual-calendar .day .day-chip {
+  width: 22px;
+  height: 22px;
+  margin: 0 auto;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  color: #111111;
+}
+
+.visual-calendar .day.outside {
+  background: #f4f7fb;
+}
+
+.visual-calendar .day.outside .day-chip {
+  background: #eceff2;
+  color: #8f98a3;
+}
+
+.visual-calendar .day.occupied,
+.visual-calendar .day.turnover,
+.visual-calendar .day.departure {
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.visual-calendar .day.occupied .day-chip,
+.visual-calendar .day.turnover .day-chip,
+.visual-calendar .day.departure .day-chip {
+  background: #ffffff;
+  color: #111111;
+  text-shadow: none;
+}
+
+.visual-calendar .day.outside.occupied .day-chip,
+.visual-calendar .day.outside.turnover .day-chip,
+.visual-calendar .day.outside.departure .day-chip {
+  background: #eceff2;
+  color: #8f98a3;
+}
+
+.visual-calendar-meta {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #5e837c;
+}
+
 .export-client-list {
   list-style: none;
   margin: 0;
@@ -681,6 +770,19 @@ button:hover:not(:disabled) {
 
 .export-client-header span {
   color: #4e637b;
+}
+
+.export-client-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-client-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  flex: 0 0 14px;
 }
 
 .export-client-grid {
@@ -1225,6 +1327,11 @@ button:hover:not(:disabled) {
   .export-client-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .export-client-meta {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .export-client-grid {

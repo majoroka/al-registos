@@ -60,6 +60,25 @@ type StayColor = {
   text: string
 }
 
+type CalendarDayPaint = {
+  className: string
+  background: string
+  color: string
+}
+
+type CalendarDayCell = {
+  key: string
+  dayNumber: number
+  className: string
+  paint: CalendarDayPaint | null
+}
+
+type MonthCalendarView = {
+  rows: CalendarDayCell[][]
+  orderedStays: StayWithApartment[]
+  colorByStayId: Map<number, StayColor>
+}
+
 const currentYear = new Date().getFullYear()
 const minYear = 2000
 const maxYear = currentYear + 1
@@ -79,6 +98,7 @@ const monthOptions = [
   { value: '11', label: 'Novembro' },
   { value: '12', label: 'Dezembro' },
 ]
+const weekdayHeaders = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
 const apartmentCardLicenseByName: Record<string, string> = {
   'T1 - Tropical': '8168/AL',
   'T2 - Caravela': '4668/AL',
@@ -521,6 +541,28 @@ function sortStaysByRecency(stays: StayWithApartment[]): StayWithApartment[] {
   })
 }
 
+function sortStaysForCalendar(stays: StayWithApartment[]): StayWithApartment[] {
+  return [...stays].sort((left, right) => {
+    const leftInterval = getStayInterval(left)
+    const rightInterval = getStayInterval(right)
+    const leftStart =
+      leftInterval?.start.getTime() ??
+      parseDateSafe(left.check_out)?.getTime() ??
+      new Date(left.year, 0, 1).getTime()
+    const rightStart =
+      rightInterval?.start.getTime() ??
+      parseDateSafe(right.check_out)?.getTime() ??
+      new Date(right.year, 0, 1).getTime()
+    if (leftStart !== rightStart) return leftStart - rightStart
+
+    const leftEnd = leftInterval?.end.getTime() ?? Number.MAX_SAFE_INTEGER
+    const rightEnd = rightInterval?.end.getTime() ?? Number.MAX_SAFE_INTEGER
+    if (leftEnd !== rightEnd) return leftEnd - rightEnd
+
+    return left.id - right.id
+  })
+}
+
 function filterStaysByFilters(stays: StayWithApartment[], filters: ParsedFilters): StayWithApartment[] {
   const { year, month } = filters
 
@@ -627,8 +669,8 @@ function buildCalendarDayStyles(
   year: number,
   month: number,
   colorByStayId: Map<number, StayColor>,
-): Map<string, { className: string; style: string }> {
-  const dayStyles = new Map<string, { className: string; style: string }>()
+): Map<string, CalendarDayPaint> {
+  const dayStyles = new Map<string, CalendarDayPaint>()
   const occupancyByDay = new Map<string, number[]>()
   const arrivalsByDay = new Map<string, number[]>()
   const departuresByDay = new Map<string, number[]>()
@@ -680,7 +722,8 @@ function buildCalendarDayStyles(
       if (depColor && arrColor) {
         dayStyles.set(dayKey, {
           className: isOutsideMonth ? 'turnover spillover' : 'turnover',
-          style: `background: linear-gradient(135deg, ${depColor.border} 0%, ${depColor.border} 49%, ${arrColor.border} 51%, ${arrColor.border} 100%); color: ${solidDayTextColor};`,
+          background: `linear-gradient(135deg, ${depColor.border} 0%, ${depColor.border} 49%, ${arrColor.border} 51%, ${arrColor.border} 100%)`,
+          color: solidDayTextColor,
         })
         continue
       }
@@ -693,7 +736,8 @@ function buildCalendarDayStyles(
           const baseDayColor = isOutsideMonth ? '#f4f7fb' : '#ffffff'
           dayStyles.set(dayKey, {
             className: isOutsideMonth ? 'departure spillover' : 'departure',
-            style: `background-color: ${baseDayColor}; background-image: linear-gradient(135deg, ${depColor.border} 0%, ${depColor.border} 50.2%, ${baseDayColor} 50.2%, ${baseDayColor} 100%); color: ${solidDayTextColor};`,
+            background: `linear-gradient(135deg, ${depColor.border} 0%, ${depColor.border} 50.2%, ${baseDayColor} 50.2%, ${baseDayColor} 100%)`,
+            color: solidDayTextColor,
           })
         }
       }
@@ -708,11 +752,60 @@ function buildCalendarDayStyles(
 
     dayStyles.set(dayKey, {
       className: isOutsideMonth ? 'occupied spillover' : 'occupied',
-      style: `background: ${buildMultiColorGradient(colors)}; color: ${solidDayTextColor};`,
+      background: buildMultiColorGradient(colors),
+      color: solidDayTextColor,
     })
   }
 
   return dayStyles
+}
+
+function buildMonthCalendarView(
+  stays: StayWithApartment[],
+  year: number,
+  month: number,
+): MonthCalendarView {
+  const orderedStays = sortStaysForCalendar(stays)
+  const colorByStayId = new Map<number, StayColor>()
+  orderedStays.forEach((stay, index) => {
+    colorByStayId.set(stay.id, getColorForStay(index))
+  })
+
+  const dayStyles = buildCalendarDayStyles(orderedStays, year, month, colorByStayId)
+  const monthStartWeekday = (new Date(year, month - 1, 1).getDay() + 6) % 7
+  const gridStart = new Date(year, month - 1, 1 - monthStartWeekday)
+
+  const cells = Array.from({ length: 42 }, (_, index) => {
+    const cellDate = addDays(gridStart, index)
+    const dayKey = toIsoDayKey(cellDate)
+    const isOutsideMonth = cellDate.getMonth() + 1 !== month || cellDate.getFullYear() !== year
+    const paint = dayStyles.get(dayKey) ?? null
+    const classNames = ['day']
+    if (isOutsideMonth) classNames.push('outside')
+    if (paint) classNames.push(paint.className)
+
+    return {
+      key: dayKey,
+      dayNumber: cellDate.getDate(),
+      className: classNames.join(' '),
+      paint,
+    }
+  })
+
+  const rows = Array.from({ length: 6 }, (_, rowIndex) => {
+    const start = rowIndex * 7
+    return cells.slice(start, start + 7)
+  })
+
+  return {
+    rows,
+    orderedStays,
+    colorByStayId,
+  }
+}
+
+function toInlineDayStyle(paint: CalendarDayPaint): string {
+  return `background: ${paint.background}; color: ${paint.color};`
 }
 
 function buildExportDocumentHtml(params: {
@@ -723,53 +816,20 @@ function buildExportDocumentHtml(params: {
   outputMode: ExportOutputMode
 }): string {
   const { stays, year, month, apartmentLabel, outputMode } = params
-  const orderedStays = [...stays].sort((left, right) => {
-    const leftInterval = getStayInterval(left)
-    const rightInterval = getStayInterval(right)
-    const leftStart =
-      leftInterval?.start.getTime() ??
-      parseDateSafe(left.check_out)?.getTime() ??
-      new Date(left.year, 0, 1).getTime()
-    const rightStart =
-      rightInterval?.start.getTime() ??
-      parseDateSafe(right.check_out)?.getTime() ??
-      new Date(right.year, 0, 1).getTime()
-    if (leftStart !== rightStart) return leftStart - rightStart
-
-    const leftEnd = leftInterval?.end.getTime() ?? Number.MAX_SAFE_INTEGER
-    const rightEnd = rightInterval?.end.getTime() ?? Number.MAX_SAFE_INTEGER
-    if (leftEnd !== rightEnd) return leftEnd - rightEnd
-
-    return left.id - right.id
-  })
+  const monthCalendar = buildMonthCalendarView(stays, year, month)
+  const { orderedStays, colorByStayId, rows } = monthCalendar
   const monthLabel = monthLabelByValue[String(month)] ?? `Mês ${month}`
-  const colorByStayId = new Map<number, StayColor>()
-  orderedStays.forEach((stay, index) => {
-    colorByStayId.set(stay.id, getColorForStay(index))
-  })
-  const dayStyles = buildCalendarDayStyles(orderedStays, year, month, colorByStayId)
-  const monthStartWeekday = (new Date(year, month - 1, 1).getDay() + 6) % 7
-  const gridStart = new Date(year, month - 1, 1 - monthStartWeekday)
-  const weekdayHeaders = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
-  const totalCells = 42
-
-  const calendarCells = Array.from({ length: totalCells }, (_, index) => {
-    const cellDate = addDays(gridStart, index)
-    const dayKey = toIsoDayKey(cellDate)
-    const isOutsideMonth = cellDate.getMonth() + 1 !== month || cellDate.getFullYear() !== year
-    const paint = dayStyles.get(dayKey)
-    const classNames = ['day']
-    if (isOutsideMonth) classNames.push('outside')
-    if (paint) classNames.push(paint.className)
-    const className = classNames.join(' ')
-    const styleAttr = paint ? ` style="${paint.style}"` : ''
-    return `<td class="${className}"${styleAttr}><span class="day-chip">${cellDate.getDate()}</span></td>`
-  })
-
-  const calendarRows = Array.from({ length: 6 }, (_, rowIndex) => {
-    const start = rowIndex * 7
-    return `<tr>${calendarCells.slice(start, start + 7).join('')}</tr>`
-  }).join('')
+  const calendarRows = rows
+    .map((row) => {
+      const cellsHtml = row
+        .map((cell) => {
+          const styleAttr = cell.paint ? ` style="${toInlineDayStyle(cell.paint)}"` : ''
+          return `<td class="${cell.className}"${styleAttr}><span class="day-chip">${cell.dayNumber}</span></td>`
+        })
+        .join('')
+      return `<tr>${cellsHtml}</tr>`
+    })
+    .join('')
 
   const rowsHtml = orderedStays
     .map((stay, index) => {
@@ -1794,61 +1854,116 @@ export default function Apartments() {
                               <span>{yearGroup.months.reduce((count, monthGroup) => count + monthGroup.stays.length, 0)} registos</span>
                             </header>
                             <div className="export-month-list">
-                              {yearGroup.months.map((monthGroup) => (
-                                <section
-                                  key={`export-month-${yearGroup.year}-${monthGroup.month}`}
-                                  className="export-month-group"
-                                >
-                                  <h5>
-                                    {monthLabelByValue[String(monthGroup.month)] ?? `Mês ${monthGroup.month}`}
-                                  </h5>
-                                  <ul className="export-client-list">
-                                    {monthGroup.stays.map((stay) => (
-                                      <li key={`export-row-${stay.id}`}>
-                                        <div className="export-client-header">
-                                          <strong>{stay.guest_name}</strong>
-                                          <span>{stay.apartment?.name ?? 'Apartamento desconhecido'}</span>
-                                        </div>
-                                        <div className="export-client-grid">
-                                          <p>
-                                            <span>Entrada:</span> {formatDateForDisplay(stay.check_in)}
-                                          </p>
-                                          <p>
-                                            <span>Saída:</span> {formatDateForDisplay(stay.check_out)}
-                                          </p>
-                                          <p>
-                                            <span>Noites:</span>{' '}
-                                            {calculateNights(stay.check_in ?? '', stay.check_out ?? '') ??
-                                              stay.nights_count}
-                                          </p>
-                                          <p>
-                                            <span>Nº Pessoas:</span> {stay.people_count}
-                                          </p>
-                                          <p>
-                                            <span>Roupa:</span> {stay.linen ?? '-'}
-                                          </p>
-                                          <p>
-                                            <span>Email:</span> {stay.guest_email || '-'}
-                                          </p>
-                                          <p>
-                                            <span>Telefone:</span> {stay.guest_phone || '-'}
-                                          </p>
-                                          <p>
-                                            <span>Morada:</span> {stay.guest_address || '-'}
-                                          </p>
-                                          <p>
-                                            <span>Ano:</span> {stay.year}
-                                          </p>
-                                          <p className="field-span-2">
-                                            <span>Notas:</span>{' '}
-                                            {stay.notes?.trim() ? stay.notes : '-'}
-                                          </p>
-                                        </div>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </section>
-                              ))}
+                              {yearGroup.months.map((monthGroup) => {
+                                const monthCalendar = buildMonthCalendarView(
+                                  monthGroup.stays,
+                                  yearGroup.year,
+                                  monthGroup.month,
+                                )
+
+                                return (
+                                  <section
+                                    key={`export-month-${yearGroup.year}-${monthGroup.month}`}
+                                    className="export-month-group"
+                                  >
+                                    <h5>
+                                      {monthLabelByValue[String(monthGroup.month)] ?? `Mês ${monthGroup.month}`}
+                                    </h5>
+                                    <div className="visual-calendar-wrap">
+                                      <table className="visual-calendar" aria-label="Calendário de reservas">
+                                        <thead>
+                                          <tr>
+                                            {weekdayHeaders.map((label) => (
+                                              <th key={`visual-weekday-${yearGroup.year}-${monthGroup.month}-${label}`}>
+                                                {label}
+                                              </th>
+                                            ))}
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {monthCalendar.rows.map((row, rowIndex) => (
+                                            <tr key={`visual-row-${yearGroup.year}-${monthGroup.month}-${rowIndex}`}>
+                                              {row.map((cell) => (
+                                                <td
+                                                  key={`visual-cell-${yearGroup.year}-${monthGroup.month}-${cell.key}-${rowIndex}`}
+                                                  className={cell.className}
+                                                  style={
+                                                    cell.paint
+                                                      ? { background: cell.paint.background, color: cell.paint.color }
+                                                      : undefined
+                                                  }
+                                                >
+                                                  <span className="day-chip">{cell.dayNumber}</span>
+                                                </td>
+                                              ))}
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                      <p className="visual-calendar-meta">
+                                        Cores distintas identificam reservas. Célula diagonal indica troca no mesmo dia.
+                                      </p>
+                                    </div>
+                                    <ul className="export-client-list">
+                                      {monthCalendar.orderedStays.map((stay, index) => {
+                                        const stayColor =
+                                          monthCalendar.colorByStayId.get(stay.id) ?? getColorForStay(index)
+
+                                        return (
+                                          <li key={`export-row-${stay.id}`}>
+                                            <div className="export-client-header">
+                                              <strong style={{ color: stayColor.border }}>{stay.guest_name}</strong>
+                                              <div className="export-client-meta">
+                                                <span>{stay.apartment?.name ?? 'Apartamento desconhecido'}</span>
+                                                <span
+                                                  className="export-client-dot"
+                                                  style={{ backgroundColor: stayColor.border }}
+                                                  aria-hidden="true"
+                                                />
+                                              </div>
+                                            </div>
+                                            <div className="export-client-grid">
+                                              <p>
+                                                <span>Entrada:</span> {formatDateForDisplay(stay.check_in)}
+                                              </p>
+                                              <p>
+                                                <span>Saída:</span> {formatDateForDisplay(stay.check_out)}
+                                              </p>
+                                              <p>
+                                                <span>Noites:</span>{' '}
+                                                {calculateNights(stay.check_in ?? '', stay.check_out ?? '') ??
+                                                  stay.nights_count}
+                                              </p>
+                                              <p>
+                                                <span>Nº Pessoas:</span> {stay.people_count}
+                                              </p>
+                                              <p>
+                                                <span>Roupa:</span> {stay.linen ?? '-'}
+                                              </p>
+                                              <p>
+                                                <span>Email:</span> {stay.guest_email || '-'}
+                                              </p>
+                                              <p>
+                                                <span>Telefone:</span> {stay.guest_phone || '-'}
+                                              </p>
+                                              <p>
+                                                <span>Morada:</span> {stay.guest_address || '-'}
+                                              </p>
+                                              <p>
+                                                <span>Ano:</span> {stay.year}
+                                              </p>
+                                              <p className="field-span-2">
+                                                <span>Notas:</span>{' '}
+                                                {stay.notes?.trim() ? stay.notes : '-'}
+                                              </p>
+                                            </div>
+                                          </li>
+                                        )
+                                      })}
+                                    </ul>
+                                  </section>
+                                )
+                              })}
                             </div>
                           </section>
                         ))}
