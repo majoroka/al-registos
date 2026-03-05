@@ -345,12 +345,20 @@ type BackupRow = {
   created_at: string
 }
 
+type BackupInvalidRow = {
+  rowNumber: number
+  guestName: string
+  apartmentName: string
+  reason: string
+}
+
 type BackupImportPreview = {
   fileName: string
   totalRows: number
   readyRows: number
   duplicateRows: number
   invalidRows: number
+  invalidEntries: BackupInvalidRow[]
   payloads: StayInput[]
 }
 
@@ -2046,16 +2054,29 @@ export default function Apartments() {
 
       let duplicateCount = 0
       let invalidCount = 0
+      const invalidEntries: BackupInvalidRow[] = []
       const payloads: StayInput[] = []
 
-      for (const row of rows) {
+      for (const [rowIndex, row] of rows.entries()) {
+        const registerInvalid = (reason: string) => {
+          invalidCount += 1
+          if (invalidEntries.length < 25) {
+            invalidEntries.push({
+              rowNumber: rowIndex + 2,
+              guestName: row.guest_name?.trim() || '(sem nome)',
+              apartmentName: row.apartment_name?.trim() || '(sem apartamento)',
+              reason,
+            })
+          }
+        }
+
         const apartmentId =
           apartments.some((apartment) => apartment.id === row.apartment_id)
             ? row.apartment_id
             : apartmentIdByName.get(row.apartment_name.trim().toLowerCase()) ?? null
 
         if (!apartmentId) {
-          invalidCount += 1
+          registerInvalid('Apartamento não encontrado.')
           continue
         }
 
@@ -2066,25 +2087,25 @@ export default function Apartments() {
         const checkIn = row.check_in.trim()
         const checkOut = row.check_out.trim()
 
-        if (
-          guestName.length < 2 ||
-          guestPhone.length < 6 ||
-          guestEmail.length < 3 ||
-          guestAddress.length < 3
-        ) {
-          invalidCount += 1
+        const fieldErrors: string[] = []
+        if (guestName.length < 2) fieldErrors.push('Nome inválido')
+        if (guestPhone.length < 6) fieldErrors.push('Telefone inválido')
+        if (guestEmail.length < 3) fieldErrors.push('Email inválido')
+        if (guestAddress.length < 3) fieldErrors.push('Morada inválida')
+        if (fieldErrors.length > 0) {
+          registerInvalid(fieldErrors.join(', ') + '.')
           continue
         }
 
         if ((checkIn && !checkOut) || (!checkIn && checkOut)) {
-          invalidCount += 1
+          registerInvalid('Datas incompletas (entrada/saída).')
           continue
         }
 
         if (checkIn && checkOut) {
           const nights = calculateNights(checkIn, checkOut)
           if (!nights || nights <= 0) {
-            invalidCount += 1
+            registerInvalid('Datas inválidas (noites <= 0).')
             continue
           }
         }
@@ -2129,6 +2150,7 @@ export default function Apartments() {
         readyRows: payloads.length,
         duplicateRows: duplicateCount,
         invalidRows: invalidCount,
+        invalidEntries,
         payloads,
       })
       if (payloads.length > 0) {
@@ -2598,6 +2620,26 @@ export default function Apartments() {
                     <p><span>Prontos para importar:</span> {backupPreview.readyRows}</p>
                     <p><span>Duplicados:</span> {backupPreview.duplicateRows}</p>
                     <p><span>Inválidos:</span> {backupPreview.invalidRows}</p>
+                    {backupPreview.invalidEntries.length > 0 && (
+                      <div className="backup-invalid-list">
+                        <p className="backup-invalid-title">Detalhe de inválidos (até 25):</p>
+                        <ul>
+                          {backupPreview.invalidEntries.map((entry, index) => (
+                            <li key={`${entry.rowNumber}-${entry.guestName}-${index}`}>
+                              <p className="backup-invalid-head">
+                                Linha {entry.rowNumber}: {entry.guestName} ({entry.apartmentName})
+                              </p>
+                              <p className="backup-invalid-reason">{entry.reason}</p>
+                            </li>
+                          ))}
+                        </ul>
+                        {backupPreview.invalidRows > backupPreview.invalidEntries.length && (
+                          <p className="backup-invalid-more">
+                            +{backupPreview.invalidRows - backupPreview.invalidEntries.length} inválidos não listados.
+                          </p>
+                        )}
+                      </div>
+                    )}
                     <div className="backup-actions">
                       <button
                         type="button"

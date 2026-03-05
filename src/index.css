@@ -616,6 +616,55 @@ button:hover:not(:disabled) {
   font-weight: 700;
 }
 
+.backup-invalid-list {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  display: grid;
+  gap: 6px;
+}
+
+.backup-invalid-title {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.backup-invalid-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 210px;
+  overflow: auto;
+}
+
+.backup-invalid-list li {
+  border: 1px solid #e7c4c4;
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #fff3f3;
+}
+
+.backup-invalid-head {
+  margin: 0;
+  color: #8f2d2d;
+  font-weight: 700;
+}
+
+.backup-invalid-reason {
+  margin: 2px 0 0;
+  color: #a54646;
+  font-size: 0.95rem;
+}
+
+.backup-invalid-more {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
 .consult-results ul {
   list-style: none;
   margin: 0;
