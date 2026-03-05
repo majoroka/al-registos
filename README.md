@@ -129,3 +129,24 @@ Checklist de ativação:
 1. `Settings -> Pages`
 1. Em `Build and deployment`, selecionar `Source: GitHub Actions`
 1. Fazer push para `main` e verificar workflow `Deploy GitHub Pages`
+
+## Keep-alive Supabase (opcional)
+
+Para reduzir risco de pause por inatividade no plano gratuito, existe workflow:
+
+- `.github/workflows/supabase-keepalive.yml`
+
+Comportamento:
+
+- corre automaticamente de 3 em 3 dias (`schedule`);
+- pode ser executado manualmente (`workflow_dispatch`);
+- faz ping ao `auth` e ao `rest` do projeto.
+
+Pré-requisitos em GitHub Actions (`Repository variables/secrets`):
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+Alertas:
+
+- ativa notificações de falha de workflow em `Settings -> Notifications -> Actions`.

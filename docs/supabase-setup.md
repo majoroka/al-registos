@@ -116,3 +116,31 @@ Depois, volta a correr:
 ```bash
 npx supabase db push
 ```
+
+## 8) Keep-alive (opcional, recomendado para uso sazonal)
+
+Workflow incluído:
+
+- `.github/workflows/supabase-keepalive.yml`
+
+Objetivo:
+
+- manter atividade mínima no projeto para reduzir risco de pause por inatividade.
+
+Como funciona:
+
+- corre automaticamente de 3 em 3 dias (`cron`);
+- faz ping ao `auth/v1/health`;
+- faz ping ao `rest/v1/apartments?select=id&limit=1` com `anon key`;
+- falha o workflow se os endpoints não responderem corretamente.
+
+Configuração em GitHub (`Settings -> Secrets and variables -> Actions`):
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+Alertas por email:
+
+1. `GitHub -> Settings -> Notifications`
+1. ativar notificações de `Actions`
+1. opcional: filtrar para receber apenas falhas
