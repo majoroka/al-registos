@@ -571,6 +571,25 @@ button:hover:not(:disabled) {
   gap: 10px;
 }
 
+.backup-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.backup-actions button {
+  min-width: 150px;
+}
+
 .consult-results ul {
   list-style: none;
   margin: 0;

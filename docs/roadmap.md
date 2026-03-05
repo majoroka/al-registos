@@ -14,11 +14,12 @@ Consolidar o MVP de registo AL com operação diária estável, segurança consi
 - [x] Modal de consulta completa do registo.
 - [x] Eliminação com confirmação em modal custom.
 - [x] Formulário com `Entrada/Saída` e cálculo automático de noites.
-- [x] Menu hamburger com 4 áreas:
+- [x] Menu hamburger com 5 áreas:
   - `Consultar`
   - `Visualizar`
   - `Exportar`
   - `Imprimir`
+- [x] Menu `Backup` para exportação local completa (`CSV`/`JSON`).
 - [x] Painel `Visualizar` com calendário mensal acima dos registos e correspondência de cores por reserva.
 - [x] Exportação PDF e impressão com layout dedicado.
 - [x] Migrações de schema + RLS aplicadas.

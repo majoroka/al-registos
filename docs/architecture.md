@@ -41,11 +41,12 @@ Aplicação web para registo, consulta e emissão documental de estadias de Aloj
   - Pesquisa global sempre visível.
   - Modal de consulta de registo completo.
   - Modal de confirmação de eliminação.
-  - Menu hamburger com 4 modos:
+  - Menu hamburger com 5 modos:
     - `Consultar`
     - `Visualizar`
     - `Exportar`
     - `Imprimir`
+    - `Backup`
 
 ## Painéis operacionais
 
@@ -65,6 +66,9 @@ Aplicação web para registo, consulta e emissão documental de estadias de Aloj
   - Mesmo layout de filtros.
   - Requer ano e mês.
   - Abre janela de impressão.
+- `Backup`
+  - Descarga local de todos os registos.
+  - Geração direta no browser em `CSV` e `JSON`.
 
 ## Documento de saída (PDF/Impressão)
 

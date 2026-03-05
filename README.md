@@ -11,11 +11,12 @@ Projeto em fase inicial, mas com fluxo operacional completo para uso diário:
 - ecrã principal orientado a 2 apartamentos;
 - criação, edição, consulta e eliminação de registos;
 - pesquisa global por todos os apartamentos;
-- menu hamburger com 4 painéis:
+- menu hamburger com 5 painéis:
   - `Consultar`
   - `Visualizar`
   - `Exportar`
   - `Imprimir`
+  - `Backup`
 - exportação em PDF com escolha de nome e gravação (com fallback por browser);
 - impressão com layout dedicado;
 - calendário mensal com marcação visual de reservas no `Visualizar`, `Exportar` e `Imprimir`;
@@ -52,6 +53,9 @@ Projeto em fase inicial, mas com fluxo operacional completo para uso diário:
 - `Imprimir`:
   - mesmos filtros;
   - abre janela de impressão com o mesmo layout base do PDF.
+- `Backup`:
+  - descarga local de todos os registos;
+  - formatos `CSV` e `JSON`.
 
 ## Arranque rápido
 

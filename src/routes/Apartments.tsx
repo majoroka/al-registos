@@ -27,7 +27,7 @@ type ConsultFilters = {
   month: string
 }
 
-type PanelMode = 'consult' | 'visualize' | 'export' | 'print'
+type PanelMode = 'consult' | 'visualize' | 'export' | 'print' | 'backup'
 
 type ParsedFilters = {
   apartmentId: number | null
@@ -323,6 +323,95 @@ function toIsoDayKey(date: Date): string {
 function buildExportFileName(apartmentLabel: string, month: number, year: number): string {
   const monthLabel = monthLabelByValue[String(month)] ?? `mes-${month}`
   return `registos-${toFileNameSegment(apartmentLabel || 'todos')}-${toFileNameSegment(monthLabel)}-${year}.pdf`
+}
+
+type BackupFormat = 'csv' | 'json'
+
+type BackupRow = {
+  id: number
+  guest_name: string
+  guest_phone: string
+  guest_email: string
+  guest_address: string
+  apartment_id: number
+  apartment_name: string
+  people_count: number
+  nights_count: number
+  linen: string
+  notes: string
+  check_in: string
+  check_out: string
+  year: number
+  created_at: string
+}
+
+function toBackupRows(stays: StayWithApartment[]): BackupRow[] {
+  return stays.map((stay) => ({
+    id: stay.id,
+    guest_name: stay.guest_name,
+    guest_phone: stay.guest_phone,
+    guest_email: stay.guest_email,
+    guest_address: stay.guest_address,
+    apartment_id: stay.apartment_id,
+    apartment_name: stay.apartment?.name ?? '',
+    people_count: stay.people_count,
+    nights_count: stay.nights_count,
+    linen: stay.linen ?? '',
+    notes: stay.notes ?? '',
+    check_in: stay.check_in ?? '',
+    check_out: stay.check_out ?? '',
+    year: stay.year,
+    created_at: stay.created_at ?? '',
+  }))
+}
+
+function escapeCsvValue(value: string | number): string {
+  const raw = String(value ?? '')
+  if (!/[",\n]/.test(raw)) return raw
+  return `"${raw.replace(/"/g, '""')}"`
+}
+
+function buildBackupCsv(rows: BackupRow[]): string {
+  const headers: Array<keyof BackupRow> = [
+    'id',
+    'guest_name',
+    'guest_phone',
+    'guest_email',
+    'guest_address',
+    'apartment_id',
+    'apartment_name',
+    'people_count',
+    'nights_count',
+    'linen',
+    'notes',
+    'check_in',
+    'check_out',
+    'year',
+    'created_at',
+  ]
+
+  const lines = [
+    headers.join(','),
+    ...rows.map((row) => headers.map((header) => escapeCsvValue(row[header])).join(',')),
+  ]
+  return lines.join('\n')
+}
+
+function buildBackupFileName(format: BackupFormat): string {
+  const now = new Date()
+  const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`
+  return `al-registos-backup-${stamp}.${format}`
+}
+
+function downloadBlob(blob: Blob, fileName: string): void {
+  const blobUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = blobUrl
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 4000)
 }
 
 async function buildPdfBlobFromHtml(html: string): Promise<Blob> {
@@ -1109,6 +1198,8 @@ export default function Apartments() {
   const [exportHasRun, setExportHasRun] = useState(false)
   const [exportLoading, setExportLoading] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  const [backupLoading, setBackupLoading] = useState(false)
+  const [backupError, setBackupError] = useState<string | null>(null)
   const [pendingPdfExport, setPendingPdfExport] = useState<PendingPdfExport | null>(null)
   const [pdfFileName, setPdfFileName] = useState('')
   const [pdfDialogError, setPdfDialogError] = useState<string | null>(null)
@@ -1385,6 +1476,7 @@ export default function Apartments() {
     setConsultOpen(true)
     setConsultError(null)
     setExportError(null)
+    setBackupError(null)
   }
 
   const handleOpenConsult = () => {
@@ -1401,6 +1493,10 @@ export default function Apartments() {
 
   const handleOpenPrint = () => {
     openPanel('print')
+  }
+
+  const handleOpenBackup = () => {
+    openPanel('backup')
   }
 
   const fetchFilteredStays = async (filters: ParsedFilters): Promise<StayWithApartment[]> => {
@@ -1597,6 +1693,34 @@ export default function Apartments() {
     setPdfFileName('')
   }
 
+  const handleBackupDownload = async (format: BackupFormat) => {
+    setBackupError(null)
+    setNotice(null)
+    setBackupLoading(true)
+    try {
+      const stays = await listStays({})
+      const rows = toBackupRows(stays)
+      const fileName = buildBackupFileName(format)
+
+      if (format === 'json') {
+        const json = JSON.stringify(rows, null, 2)
+        downloadBlob(new Blob([json], { type: 'application/json;charset=utf-8' }), fileName)
+      } else {
+        const csv = buildBackupCsv(rows)
+        downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), fileName)
+      }
+
+      setNotice(
+        `Backup ${format.toUpperCase()} gerado com ${rows.length} registos.`,
+      )
+    } catch (error) {
+      logError('Erro ao gerar backup local', error)
+      setBackupError(toPublicErrorMessage(error, 'Não foi possível gerar o backup local.'))
+    } finally {
+      setBackupLoading(false)
+    }
+  }
+
   const handleOpenConsultResult = (stay: StayWithApartment) => {
     setConsultOpen(false)
     handleOpenSearchResult(stay)
@@ -1605,6 +1729,7 @@ export default function Apartments() {
   const isConsultMode = panelMode === 'consult'
   const isVisualizeMode = panelMode === 'visualize'
   const isExportMode = panelMode === 'export'
+  const isBackupMode = panelMode === 'backup'
 
   const handlePanelSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -1618,6 +1743,9 @@ export default function Apartments() {
     }
     if (isExportMode) {
       void handleExportDocument('pdf')
+      return
+    }
+    if (isBackupMode) {
       return
     }
     void handleExportDocument('print')
@@ -1657,6 +1785,9 @@ export default function Apartments() {
                 <button type="button" role="menuitem" onClick={handleOpenPrint}>
                   Imprimir
                 </button>
+                <button type="button" role="menuitem" onClick={handleOpenBackup}>
+                  Backup
+                </button>
               </div>
             )}
           </div>
@@ -1673,7 +1804,9 @@ export default function Apartments() {
                       ? 'Visualizar registos'
                       : isExportMode
                         ? 'Exportar registos'
-                        : 'Imprimir registos'}
+                        : isBackupMode
+                          ? 'Backup local'
+                          : 'Imprimir registos'}
                 </h2>
                 <p>
                   {isConsultMode
@@ -1682,7 +1815,9 @@ export default function Apartments() {
                       ? 'Filtra por apartamento, ano e mês para visualizar no ecrã.'
                       : isExportMode
                         ? 'Filtra por apartamento, ano e mês para exportar em PDF.'
-                        : 'Filtra por apartamento, ano e mês para imprimir.'}
+                        : isBackupMode
+                          ? 'Descarrega todos os registos para ficheiro local em CSV ou JSON.'
+                          : 'Filtra por apartamento, ano e mês para imprimir.'}
                 </p>
               </div>
               <button
@@ -1694,89 +1829,91 @@ export default function Apartments() {
               </button>
             </div>
 
-            <form className="consult-form" onSubmit={handlePanelSubmit}>
-              <label>
-                Apartamento
-                <select
-                  className="filter-select"
-                  value={consultFilters.apartmentId}
-                  onChange={(event) =>
-                    handleConsultFilterChange('apartmentId', event.target.value)
-                  }
-                >
-                  <option value="">Todos</option>
-                  {apartments.map((apartment) => (
-                    <option key={`filter-apartment-${apartment.id}`} value={String(apartment.id)}>
-                      {apartment.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            {!isBackupMode && (
+              <form className="consult-form" onSubmit={handlePanelSubmit}>
+                <label>
+                  Apartamento
+                  <select
+                    className="filter-select"
+                    value={consultFilters.apartmentId}
+                    onChange={(event) =>
+                      handleConsultFilterChange('apartmentId', event.target.value)
+                    }
+                  >
+                    <option value="">Todos</option>
+                    {apartments.map((apartment) => (
+                      <option key={`filter-apartment-${apartment.id}`} value={String(apartment.id)}>
+                        {apartment.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-              <label>
-                Ano
-                <select
-                  className="filter-select"
-                  value={consultFilters.year}
-                  onChange={(event) => handleConsultFilterChange('year', event.target.value)}
-                >
-                  <option value="">Todos</option>
-                  {yearFilterOptions.map((yearOption) => (
-                    <option key={yearOption} value={yearOption}>
-                      {yearOption}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                <label>
+                  Ano
+                  <select
+                    className="filter-select"
+                    value={consultFilters.year}
+                    onChange={(event) => handleConsultFilterChange('year', event.target.value)}
+                  >
+                    <option value="">Todos</option>
+                    {yearFilterOptions.map((yearOption) => (
+                      <option key={yearOption} value={yearOption}>
+                        {yearOption}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-              <label>
-                Mês
-                <select
-                  className="filter-select"
-                  value={consultFilters.month}
-                  onChange={(event) => handleConsultFilterChange('month', event.target.value)}
-                >
-                  <option value="">Todos</option>
-                  {monthOptions.map((monthOption) => (
-                    <option key={monthOption.value} value={monthOption.value}>
-                      {monthOption.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                <label>
+                  Mês
+                  <select
+                    className="filter-select"
+                    value={consultFilters.month}
+                    onChange={(event) => handleConsultFilterChange('month', event.target.value)}
+                  >
+                    <option value="">Todos</option>
+                    {monthOptions.map((monthOption) => (
+                      <option key={monthOption.value} value={monthOption.value}>
+                        {monthOption.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-              <div className="consult-actions">
-                {isConsultMode ? (
-                  <>
-                    <button type="submit" disabled={consultLoading}>
-                      {consultLoading ? 'A consultar...' : 'Consultar'}
-                    </button>
-                    <button type="button" className="clear-btn" onClick={handleClearConsult}>
-                      Limpar
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button type="submit" disabled={exportLoading}>
-                      {isVisualizeMode
-                        ? exportLoading
-                          ? 'A visualizar...'
-                          : 'Visualizar'
-                        : isExportMode
+                <div className="consult-actions">
+                  {isConsultMode ? (
+                    <>
+                      <button type="submit" disabled={consultLoading}>
+                        {consultLoading ? 'A consultar...' : 'Consultar'}
+                      </button>
+                      <button type="button" className="clear-btn" onClick={handleClearConsult}>
+                        Limpar
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button type="submit" disabled={exportLoading}>
+                        {isVisualizeMode
                           ? exportLoading
-                            ? 'A exportar...'
-                            : 'Exportar'
-                          : exportLoading
-                            ? 'A imprimir...'
-                            : 'Imprimir'}
-                    </button>
-                    <button type="button" className="clear-btn" onClick={handleClearExport}>
-                      Limpar
-                    </button>
-                  </>
-                )}
-              </div>
-            </form>
+                            ? 'A visualizar...'
+                            : 'Visualizar'
+                          : isExportMode
+                            ? exportLoading
+                              ? 'A exportar...'
+                              : 'Exportar'
+                            : exportLoading
+                              ? 'A imprimir...'
+                              : 'Imprimir'}
+                      </button>
+                      <button type="button" className="clear-btn" onClick={handleClearExport}>
+                        Limpar
+                      </button>
+                    </>
+                  )}
+                </div>
+              </form>
+            )}
 
             {isConsultMode ? (
               <>
@@ -1972,6 +2109,34 @@ export default function Apartments() {
                   </div>
                 )}
               </>
+            ) : isBackupMode ? (
+              <div className="backup-panel">
+                <h3>Backup de todos os registos</h3>
+                <p>
+                  Escolhe o formato para descarregar localmente a lista completa de registos.
+                </p>
+                {backupError && <p className="error">{backupError}</p>}
+                <div className="backup-actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleBackupDownload('csv')
+                    }}
+                    disabled={backupLoading}
+                  >
+                    {backupLoading ? 'A gerar...' : 'Download CSV'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleBackupDownload('json')
+                    }}
+                    disabled={backupLoading}
+                  >
+                    {backupLoading ? 'A gerar...' : 'Download JSON'}
+                  </button>
+                </div>
+              </div>
             ) : (
               <>
                 {exportError && <p className="error">{exportError}</p>}
