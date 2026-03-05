@@ -144,3 +144,9 @@ Alertas por email:
 1. `GitHub -> Settings -> Notifications`
 1. ativar notificações de `Actions`
 1. opcional: filtrar para receber apenas falhas
+
+Alerta redundante no repositório:
+
+- quando o keep-alive falha, o workflow abre/atualiza a issue
+  `[ALERTA] Supabase keep-alive falhou`
+- usa label `supabase-keepalive-alert` para facilitar filtros.

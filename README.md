@@ -150,3 +150,4 @@ Pré-requisitos em GitHub Actions (`Repository variables/secrets`):
 Alertas:
 
 - ativa notificações de falha de workflow em `Settings -> Notifications -> Actions`.
+- redundância: em caso de falha, o workflow abre/atualiza uma issue com label `supabase-keepalive-alert`.
