@@ -19,7 +19,7 @@ Consolidar o MVP de registo AL com operação diária estável, segurança consi
   - `Visualizar`
   - `Exportar`
   - `Imprimir`
-- [x] Menu `Backup` para exportação local completa (`CSV`/`JSON`).
+- [x] Menu `Backup` com `Download Backup` (ZIP com CSV+JSON) e `Importar Backup` com pré-visualização.
 - [x] Painel `Visualizar` com calendário mensal acima dos registos e correspondência de cores por reserva.
 - [x] Exportação PDF e impressão com layout dedicado.
 - [x] Migrações de schema + RLS aplicadas.

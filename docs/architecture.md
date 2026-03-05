@@ -67,8 +67,8 @@ Aplicação web para registo, consulta e emissão documental de estadias de Aloj
   - Requer ano e mês.
   - Abre janela de impressão.
 - `Backup`
-  - Descarga local de todos os registos.
-  - Geração direta no browser em `CSV` e `JSON`.
+  - `Download Backup`: gera ZIP local com `CSV` + `JSON`.
+  - `Importar Backup`: lê ZIP, mostra pré-visualização (`prontos/duplicados/inválidos`) e confirma importação.
 
 ## Documento de saída (PDF/Impressão)
 

@@ -54,8 +54,8 @@ Projeto em fase inicial, mas com fluxo operacional completo para uso diário:
   - mesmos filtros;
   - abre janela de impressão com o mesmo layout base do PDF.
 - `Backup`:
-  - descarga local de todos os registos;
-  - formatos `CSV` e `JSON`.
+  - `Download Backup`: gera um `ZIP` com ficheiros `CSV` + `JSON`;
+  - `Importar Backup`: analisa o `ZIP`, mostra pré-visualização e só depois confirma a importação.
 
 ## Arranque rápido
 

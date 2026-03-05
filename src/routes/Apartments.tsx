@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 import DatePickerInput from '../components/DatePickerInput'
@@ -345,6 +345,15 @@ type BackupRow = {
   created_at: string
 }
 
+type BackupImportPreview = {
+  fileName: string
+  totalRows: number
+  readyRows: number
+  duplicateRows: number
+  invalidRows: number
+  payloads: StayInput[]
+}
+
 function toBackupRows(stays: StayWithApartment[]): BackupRow[] {
   return stays.map((stay) => ({
     id: stay.id,
@@ -401,6 +410,273 @@ function buildBackupFileName(format: BackupFormat): string {
   const now = new Date()
   const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`
   return `al-registos-backup-${stamp}.${format}`
+}
+
+function buildBackupZipFileName(): string {
+  const now = new Date()
+  const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`
+  return `al-registos-backup-${stamp}.zip`
+}
+
+const textEncoder = new TextEncoder()
+const textDecoder = new TextDecoder()
+
+const crcTable = (() => {
+  const table = new Uint32Array(256)
+  for (let i = 0; i < 256; i += 1) {
+    let crc = i
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc & 1) ? (0xedb88320 ^ (crc >>> 1)) : (crc >>> 1)
+    }
+    table[i] = crc >>> 0
+  }
+  return table
+})()
+
+function crc32(data: Uint8Array): number {
+  let crc = 0xffffffff
+  for (let i = 0; i < data.length; i += 1) {
+    crc = crcTable[(crc ^ data[i]) & 0xff] ^ (crc >>> 8)
+  }
+  return (crc ^ 0xffffffff) >>> 0
+}
+
+function pushUint16LE(target: number[], value: number): void {
+  target.push(value & 0xff, (value >>> 8) & 0xff)
+}
+
+function pushUint32LE(target: number[], value: number): void {
+  target.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff)
+}
+
+function toDosDateTime(date: Date): { dosDate: number; dosTime: number } {
+  const year = Math.max(1980, date.getFullYear())
+  const dosDate = ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate()
+  const dosTime = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2)
+  return { dosDate, dosTime }
+}
+
+function buildBackupZipBlob(files: Array<{ name: string; content: string }>): Blob {
+  const bodyParts: Uint8Array[] = []
+  const centralParts: Uint8Array[] = []
+  const now = new Date()
+  const { dosDate, dosTime } = toDosDateTime(now)
+  let offset = 0
+
+  for (const file of files) {
+    const fileNameBytes = textEncoder.encode(file.name)
+    const fileData = textEncoder.encode(file.content)
+    const checksum = crc32(fileData)
+    const localOffset = offset
+
+    const localHeader: number[] = []
+    pushUint32LE(localHeader, 0x04034b50)
+    pushUint16LE(localHeader, 20)
+    pushUint16LE(localHeader, 0)
+    pushUint16LE(localHeader, 0)
+    pushUint16LE(localHeader, dosTime)
+    pushUint16LE(localHeader, dosDate)
+    pushUint32LE(localHeader, checksum)
+    pushUint32LE(localHeader, fileData.length)
+    pushUint32LE(localHeader, fileData.length)
+    pushUint16LE(localHeader, fileNameBytes.length)
+    pushUint16LE(localHeader, 0)
+
+    const localHeaderBytes = Uint8Array.from(localHeader)
+    bodyParts.push(localHeaderBytes, fileNameBytes, fileData)
+    offset += localHeaderBytes.length + fileNameBytes.length + fileData.length
+
+    const centralHeader: number[] = []
+    pushUint32LE(centralHeader, 0x02014b50)
+    pushUint16LE(centralHeader, 20)
+    pushUint16LE(centralHeader, 20)
+    pushUint16LE(centralHeader, 0)
+    pushUint16LE(centralHeader, 0)
+    pushUint16LE(centralHeader, dosTime)
+    pushUint16LE(centralHeader, dosDate)
+    pushUint32LE(centralHeader, checksum)
+    pushUint32LE(centralHeader, fileData.length)
+    pushUint32LE(centralHeader, fileData.length)
+    pushUint16LE(centralHeader, fileNameBytes.length)
+    pushUint16LE(centralHeader, 0)
+    pushUint16LE(centralHeader, 0)
+    pushUint16LE(centralHeader, 0)
+    pushUint16LE(centralHeader, 0)
+    pushUint32LE(centralHeader, 0)
+    pushUint32LE(centralHeader, localOffset)
+
+    centralParts.push(Uint8Array.from(centralHeader), fileNameBytes)
+  }
+
+  const centralStart = offset
+  for (const part of centralParts) {
+    offset += part.length
+  }
+  const centralSize = offset - centralStart
+
+  const endRecord: number[] = []
+  pushUint32LE(endRecord, 0x06054b50)
+  pushUint16LE(endRecord, 0)
+  pushUint16LE(endRecord, 0)
+  pushUint16LE(endRecord, files.length)
+  pushUint16LE(endRecord, files.length)
+  pushUint32LE(endRecord, centralSize)
+  pushUint32LE(endRecord, centralStart)
+  pushUint16LE(endRecord, 0)
+
+  return new Blob([...bodyParts, ...centralParts, Uint8Array.from(endRecord)], {
+    type: 'application/zip',
+  })
+}
+
+function splitCsvLine(line: string): string[] {
+  const values: string[] = []
+  let current = ''
+  let inQuotes = false
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]
+    const next = line[index + 1]
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        current += '"'
+        index += 1
+      } else {
+        inQuotes = !inQuotes
+      }
+      continue
+    }
+
+    if (char === ',' && !inQuotes) {
+      values.push(current)
+      current = ''
+      continue
+    }
+
+    current += char
+  }
+
+  values.push(current)
+  return values
+}
+
+function parseBackupCsv(csvText: string): BackupRow[] {
+  const rawLines = csvText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+  if (rawLines.length <= 1) return []
+
+  const header = splitCsvLine(rawLines[0])
+  const rows: BackupRow[] = []
+
+  for (let index = 1; index < rawLines.length; index += 1) {
+    const values = splitCsvLine(rawLines[index])
+    const row = Object.fromEntries(header.map((key, colIndex) => [key, values[colIndex] ?? '']))
+
+    rows.push({
+      id: Number(row.id || 0),
+      guest_name: row.guest_name || '',
+      guest_phone: row.guest_phone || '',
+      guest_email: row.guest_email || '',
+      guest_address: row.guest_address || '',
+      apartment_id: Number(row.apartment_id || 0),
+      apartment_name: row.apartment_name || '',
+      people_count: Number(row.people_count || 0),
+      nights_count: Number(row.nights_count || 0),
+      linen: row.linen || '',
+      notes: row.notes || '',
+      check_in: row.check_in || '',
+      check_out: row.check_out || '',
+      year: Number(row.year || 0),
+      created_at: row.created_at || '',
+    })
+  }
+
+  return rows
+}
+
+function normalizeBackupRows(rawRows: unknown): BackupRow[] {
+  if (!Array.isArray(rawRows)) return []
+  return rawRows.map((row) => {
+    const safe = typeof row === 'object' && row !== null ? (row as Record<string, unknown>) : {}
+    return {
+      id: Number(safe.id ?? 0),
+      guest_name: String(safe.guest_name ?? ''),
+      guest_phone: String(safe.guest_phone ?? ''),
+      guest_email: String(safe.guest_email ?? ''),
+      guest_address: String(safe.guest_address ?? ''),
+      apartment_id: Number(safe.apartment_id ?? 0),
+      apartment_name: String(safe.apartment_name ?? ''),
+      people_count: Number(safe.people_count ?? 0),
+      nights_count: Number(safe.nights_count ?? 0),
+      linen: String(safe.linen ?? ''),
+      notes: String(safe.notes ?? ''),
+      check_in: String(safe.check_in ?? ''),
+      check_out: String(safe.check_out ?? ''),
+      year: Number(safe.year ?? 0),
+      created_at: String(safe.created_at ?? ''),
+    }
+  })
+}
+
+async function extractRowsFromBackupZip(file: File): Promise<BackupRow[]> {
+  const buffer = await file.arrayBuffer()
+  const bytes = new Uint8Array(buffer)
+  const view = new DataView(buffer)
+  const fileContents = new Map<string, string>()
+  let offset = 0
+
+  while (offset + 4 <= bytes.length) {
+    const signature = view.getUint32(offset, true)
+    if (signature !== 0x04034b50) break
+    if (offset + 30 > bytes.length) break
+
+    const flags = view.getUint16(offset + 6, true)
+    const compression = view.getUint16(offset + 8, true)
+    const compressedSize = view.getUint32(offset + 18, true)
+    const fileNameLength = view.getUint16(offset + 26, true)
+    const extraLength = view.getUint16(offset + 28, true)
+
+    if ((flags & 0x08) !== 0) {
+      throw new Error('ZIP com data descriptor não suportado.')
+    }
+    if (compression !== 0) {
+      throw new Error('ZIP comprimido não suportado. Usa o ZIP gerado pela aplicação.')
+    }
+
+    const nameStart = offset + 30
+    const nameEnd = nameStart + fileNameLength
+    const dataStart = nameEnd + extraLength
+    const dataEnd = dataStart + compressedSize
+    if (dataEnd > bytes.length) break
+
+    const name = textDecoder.decode(bytes.slice(nameStart, nameEnd))
+    const content = textDecoder.decode(bytes.slice(dataStart, dataEnd))
+    fileContents.set(name, content)
+    offset = dataEnd
+  }
+
+  const jsonEntry = Array.from(fileContents.entries()).find(([name]) =>
+    name.toLowerCase().endsWith('.json'),
+  )
+  if (jsonEntry) {
+    try {
+      return normalizeBackupRows(JSON.parse(jsonEntry[1]))
+    } catch {
+      // fallback to CSV
+    }
+  }
+
+  const csvEntry = Array.from(fileContents.entries()).find(([name]) =>
+    name.toLowerCase().endsWith('.csv'),
+  )
+  if (csvEntry) {
+    return parseBackupCsv(csvEntry[1])
+  }
+
+  throw new Error('O ZIP não contém ficheiro de backup válido (.json ou .csv).')
 }
 
 function downloadBlob(blob: Blob, fileName: string): void {
@@ -1199,7 +1475,10 @@ export default function Apartments() {
   const [exportLoading, setExportLoading] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [backupLoading, setBackupLoading] = useState(false)
+  const [backupPreparing, setBackupPreparing] = useState(false)
+  const [backupImporting, setBackupImporting] = useState(false)
   const [backupError, setBackupError] = useState<string | null>(null)
+  const [backupPreview, setBackupPreview] = useState<BackupImportPreview | null>(null)
   const [pendingPdfExport, setPendingPdfExport] = useState<PendingPdfExport | null>(null)
   const [pdfFileName, setPdfFileName] = useState('')
   const [pdfDialogError, setPdfDialogError] = useState<string | null>(null)
@@ -1217,6 +1496,7 @@ export default function Apartments() {
   const [loadingApartments, setLoadingApartments] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const backupFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const selectedApartment = useMemo(
     () => apartments.find((apartment) => apartment.id === selectedApartmentId) ?? null,
@@ -1477,6 +1757,7 @@ export default function Apartments() {
     setConsultError(null)
     setExportError(null)
     setBackupError(null)
+    setBackupPreview(null)
   }
 
   const handleOpenConsult = () => {
@@ -1693,31 +1974,204 @@ export default function Apartments() {
     setPdfFileName('')
   }
 
-  const handleBackupDownload = async (format: BackupFormat) => {
+  const handleBackupDownload = async () => {
     setBackupError(null)
     setNotice(null)
     setBackupLoading(true)
     try {
       const stays = await listStays({})
       const rows = toBackupRows(stays)
-      const fileName = buildBackupFileName(format)
-
-      if (format === 'json') {
-        const json = JSON.stringify(rows, null, 2)
-        downloadBlob(new Blob([json], { type: 'application/json;charset=utf-8' }), fileName)
-      } else {
-        const csv = buildBackupCsv(rows)
-        downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), fileName)
-      }
-
-      setNotice(
-        `Backup ${format.toUpperCase()} gerado com ${rows.length} registos.`,
-      )
+      const fileName = buildBackupZipFileName()
+      const csvFileName = buildBackupFileName('csv')
+      const jsonFileName = buildBackupFileName('json')
+      const zipBlob = buildBackupZipBlob([
+        { name: csvFileName, content: buildBackupCsv(rows) },
+        { name: jsonFileName, content: JSON.stringify(rows, null, 2) },
+      ])
+      downloadBlob(zipBlob, fileName)
+      setNotice(`Backup ZIP gerado com ${rows.length} registos.`)
     } catch (error) {
       logError('Erro ao gerar backup local', error)
       setBackupError(toPublicErrorMessage(error, 'Não foi possível gerar o backup local.'))
     } finally {
       setBackupLoading(false)
+    }
+  }
+
+  const handleRequestBackupImport = () => {
+    setBackupError(null)
+    if (backupPreparing || backupImporting) return
+    backupFileInputRef.current?.click()
+  }
+
+  const handleCancelBackupPreview = () => {
+    if (backupPreparing || backupImporting) return
+    setBackupPreview(null)
+    setBackupError(null)
+  }
+
+  const handleBackupImportFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    setBackupError(null)
+    setNotice(null)
+    setBackupPreparing(true)
+    setBackupPreview(null)
+
+    try {
+      const rows = await extractRowsFromBackupZip(file)
+      if (rows.length === 0) {
+        setBackupError('O ficheiro não contém registos para importar.')
+        return
+      }
+
+      const existing = await listStays({})
+      const existingKeySet = new Set(
+        existing.map((stay) =>
+          [
+            stay.apartment_id,
+            stay.guest_name.trim().toLowerCase(),
+            stay.guest_phone.trim(),
+            stay.check_in ?? '',
+            stay.check_out ?? '',
+          ].join('|'),
+        ),
+      )
+
+      const apartmentIdByName = new Map(
+        apartments.map((apartment) => [apartment.name.trim().toLowerCase(), apartment.id]),
+      )
+
+      let duplicateCount = 0
+      let invalidCount = 0
+      const payloads: StayInput[] = []
+
+      for (const row of rows) {
+        const apartmentId =
+          apartments.some((apartment) => apartment.id === row.apartment_id)
+            ? row.apartment_id
+            : apartmentIdByName.get(row.apartment_name.trim().toLowerCase()) ?? null
+
+        if (!apartmentId) {
+          invalidCount += 1
+          continue
+        }
+
+        const guestName = row.guest_name.trim()
+        const guestPhone = row.guest_phone.trim()
+        const guestEmail = row.guest_email.trim()
+        const guestAddress = row.guest_address.trim()
+        const checkIn = row.check_in.trim()
+        const checkOut = row.check_out.trim()
+
+        if (
+          guestName.length < 2 ||
+          guestPhone.length < 6 ||
+          guestEmail.length < 3 ||
+          guestAddress.length < 3
+        ) {
+          invalidCount += 1
+          continue
+        }
+
+        if ((checkIn && !checkOut) || (!checkIn && checkOut)) {
+          invalidCount += 1
+          continue
+        }
+
+        if (checkIn && checkOut) {
+          const nights = calculateNights(checkIn, checkOut)
+          if (!nights || nights <= 0) {
+            invalidCount += 1
+            continue
+          }
+        }
+
+        const key = [apartmentId, guestName.toLowerCase(), guestPhone, checkIn, checkOut].join('|')
+        if (existingKeySet.has(key)) {
+          duplicateCount += 1
+          continue
+        }
+
+        const year = Number.isFinite(row.year) && row.year > 0
+          ? row.year
+          : checkIn
+            ? parseDateSafe(checkIn)?.getFullYear() ?? currentYear
+            : currentYear
+        const calculatedNights = checkIn && checkOut ? calculateNights(checkIn, checkOut) ?? row.nights_count : row.nights_count
+        const nightsCount = Number.isFinite(calculatedNights) && calculatedNights > 0 ? calculatedNights : 1
+
+        const payload: StayInput = {
+          guest_name: guestName,
+          guest_phone: guestPhone,
+          guest_email: guestEmail,
+          guest_address: guestAddress,
+          apartment_id: apartmentId,
+          people_count: Number.isFinite(row.people_count) && row.people_count > 0 ? row.people_count : 1,
+          nights_count: nightsCount,
+          linen: row.linen === 'Sem Roupa' ? 'Sem Roupa' : 'Com Roupa',
+          rating: null,
+          notes: row.notes?.trim() ? row.notes.trim() : null,
+          check_in: checkIn || null,
+          check_out: checkOut || null,
+          year,
+        }
+
+        payloads.push(payload)
+        existingKeySet.add(key)
+      }
+
+      setBackupPreview({
+        fileName: file.name,
+        totalRows: rows.length,
+        readyRows: payloads.length,
+        duplicateRows: duplicateCount,
+        invalidRows: invalidCount,
+        payloads,
+      })
+      if (payloads.length > 0) {
+        setNotice(`Pré-visualização pronta: ${payloads.length} registos prontos para importar.`)
+      } else {
+        setBackupError('Não existem registos novos válidos para importar neste backup.')
+      }
+    } catch (error) {
+      logError('Erro ao importar backup', error)
+      setBackupError(toPublicErrorMessage(error, 'Não foi possível importar o backup.'))
+    } finally {
+      setBackupPreparing(false)
+    }
+  }
+
+  const handleConfirmBackupImport = async () => {
+    if (!backupPreview) return
+
+    setBackupError(null)
+    setNotice(null)
+    setBackupImporting(true)
+    try {
+      let importedCount = 0
+      let failedCount = 0
+
+      for (const payload of backupPreview.payloads) {
+        try {
+          await createStay(payload)
+          importedCount += 1
+        } catch {
+          failedCount += 1
+        }
+      }
+
+      setNotice(
+        `Importação concluída: ${importedCount} importados, ${backupPreview.duplicateRows} duplicados, ${backupPreview.invalidRows} inválidos, ${failedCount} falhados.`,
+      )
+      setBackupPreview(null)
+    } catch (error) {
+      logError('Erro ao confirmar importação de backup', error)
+      setBackupError(toPublicErrorMessage(error, 'Não foi possível concluir a importação do backup.'))
+    } finally {
+      setBackupImporting(false)
     }
   }
 
@@ -2113,29 +2567,67 @@ export default function Apartments() {
               <div className="backup-panel">
                 <h3>Backup de todos os registos</h3>
                 <p>
-                  Escolhe o formato para descarregar localmente a lista completa de registos.
+                  Descarrega um ZIP com CSV+JSON, ou importa um ZIP de backup para restaurar registos.
                 </p>
                 {backupError && <p className="error">{backupError}</p>}
                 <div className="backup-actions">
                   <button
                     type="button"
                     onClick={() => {
-                      void handleBackupDownload('csv')
+                      void handleBackupDownload()
                     }}
-                    disabled={backupLoading}
+                    disabled={backupLoading || backupPreparing || backupImporting}
                   >
-                    {backupLoading ? 'A gerar...' : 'Download CSV'}
+                    {backupLoading ? 'A gerar...' : 'Download Backup'}
                   </button>
                   <button
                     type="button"
                     onClick={() => {
-                      void handleBackupDownload('json')
+                      handleRequestBackupImport()
                     }}
-                    disabled={backupLoading}
+                    disabled={backupLoading || backupPreparing || backupImporting}
                   >
-                    {backupLoading ? 'A gerar...' : 'Download JSON'}
+                    {backupPreparing ? 'A analisar...' : 'Importar Backup'}
                   </button>
                 </div>
+                {backupPreview && (
+                  <div className="backup-preview">
+                    <h4>Pré-visualização da importação</h4>
+                    <p><span>Ficheiro:</span> {backupPreview.fileName}</p>
+                    <p><span>Total no backup:</span> {backupPreview.totalRows}</p>
+                    <p><span>Prontos para importar:</span> {backupPreview.readyRows}</p>
+                    <p><span>Duplicados:</span> {backupPreview.duplicateRows}</p>
+                    <p><span>Inválidos:</span> {backupPreview.invalidRows}</p>
+                    <div className="backup-actions">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleConfirmBackupImport()
+                        }}
+                        disabled={backupImporting || backupPreview.readyRows === 0}
+                      >
+                        {backupImporting ? 'A importar...' : 'Confirmar importação'}
+                      </button>
+                      <button
+                        type="button"
+                        className="clear-btn"
+                        onClick={handleCancelBackupPreview}
+                        disabled={backupImporting}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <input
+                  ref={backupFileInputRef}
+                  type="file"
+                  accept=".zip,application/zip,application/x-zip-compressed"
+                  className="backup-file-input"
+                  onChange={(event) => {
+                    void handleBackupImportFileChange(event)
+                  }}
+                />
               </div>
             ) : (
               <>
