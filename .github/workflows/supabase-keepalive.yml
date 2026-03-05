@@ -36,12 +36,20 @@ jobs:
 
       - name: Ping Auth health endpoint
         run: |
-          STATUS=$(curl -sS -o /tmp/auth-health.txt -w "%{http_code}" --max-time 20 "$SUPABASE_URL/auth/v1/health")
+          STATUS=$(curl -sS -o /tmp/auth-health.txt -w "%{http_code}" --max-time 20 \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            "$SUPABASE_URL/auth/v1/health")
           echo "auth/v1/health -> HTTP $STATUS"
-          if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 400 ]; then
-            cat /tmp/auth-health.txt
-            exit 1
-          fi
+          case "$STATUS" in
+            200|204|401|403)
+              echo "Auth endpoint reachable."
+              ;;
+            *)
+              cat /tmp/auth-health.txt
+              exit 1
+              ;;
+          esac
 
       - name: Ping REST endpoint
         run: |
