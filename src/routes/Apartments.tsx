@@ -1189,6 +1189,19 @@ function buildCalendarDayStyles(
       continue
     }
 
+    if (arrivalId !== null) {
+      const arrColor = colorByStayId.get(arrivalId)
+      if (arrColor) {
+        const baseDayColor = isOutsideMonth ? '#f4f7fb' : '#ffffff'
+        dayStyles.set(dayKey, {
+          className: isOutsideMonth ? 'arrival spillover' : 'arrival',
+          background: `linear-gradient(135deg, ${baseDayColor} 0%, ${baseDayColor} 49.8%, ${arrColor.border} 50.2%, ${arrColor.border} 100%)`,
+          color: solidDayTextColor,
+        })
+        continue
+      }
+    }
+
     const colors = occupiedIds
       .map((id) => colorByStayId.get(id)?.border)
       .filter((value): value is string => Boolean(value))
@@ -1410,18 +1423,24 @@ function buildExportDocumentHtml(params: {
         color: #8f98a3;
       }
       .calendar .day.occupied,
-      .calendar .day.turnover {
+      .calendar .day.turnover,
+      .calendar .day.arrival,
+      .calendar .day.departure {
         font-weight: 700;
         box-shadow: none;
       }
       .calendar .day.occupied .day-chip,
-      .calendar .day.turnover .day-chip {
+      .calendar .day.turnover .day-chip,
+      .calendar .day.arrival .day-chip,
+      .calendar .day.departure .day-chip {
         background: #ffffff;
         color: #111111;
         text-shadow: none;
       }
       .calendar .day.outside.occupied .day-chip,
-      .calendar .day.outside.turnover .day-chip {
+      .calendar .day.outside.turnover .day-chip,
+      .calendar .day.outside.arrival .day-chip,
+      .calendar .day.outside.departure .day-chip {
         background: #eceff2;
         color: #8f98a3;
       }

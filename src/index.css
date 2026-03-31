@@ -814,6 +814,7 @@ button:hover:not(:disabled) {
 
 .visual-calendar .day.occupied,
 .visual-calendar .day.turnover,
+.visual-calendar .day.arrival,
 .visual-calendar .day.departure {
   font-weight: 700;
   box-shadow: none;
@@ -821,6 +822,7 @@ button:hover:not(:disabled) {
 
 .visual-calendar .day.occupied .day-chip,
 .visual-calendar .day.turnover .day-chip,
+.visual-calendar .day.arrival .day-chip,
 .visual-calendar .day.departure .day-chip {
   background: #ffffff;
   color: #111111;
@@ -829,6 +831,7 @@ button:hover:not(:disabled) {
 
 .visual-calendar .day.outside.occupied .day-chip,
 .visual-calendar .day.outside.turnover .day-chip,
+.visual-calendar .day.outside.arrival .day-chip,
 .visual-calendar .day.outside.departure .day-chip {
   background: #eceff2;
   color: #8f98a3;
