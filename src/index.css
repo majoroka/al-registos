@@ -163,6 +163,12 @@ textarea {
   color: var(--ink);
 }
 
+input[readonly] {
+  background: rgba(232, 242, 252, 0.78);
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
 input:focus,
 select:focus,
 textarea:focus {

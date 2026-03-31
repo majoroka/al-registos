@@ -8,7 +8,7 @@ export type StayFilters = {
 }
 
 const staySelect =
-  'id, guest_name, guest_phone, guest_email, guest_address, apartment_id, people_count, nights_count, linen, rating, notes, check_in, check_out, year, created_at, apartment:apartments(id, name)'
+  'id, guest_name, guest_phone, guest_email, guest_address, apartment_id, people_count, nights_count, amount_paid, linen, rating, notes, check_in, check_out, year, created_at, apartment:apartments(id, name)'
 
 type RawStayWithApartment = Omit<StayWithApartment, 'apartment'> & {
   apartment?: Apartment | Apartment[] | null
@@ -26,6 +26,10 @@ function normalizeApartment(
 function normalizeStay(row: RawStayWithApartment): StayWithApartment {
   return {
     ...row,
+    amount_paid:
+      row.amount_paid === null || row.amount_paid === undefined
+        ? null
+        : Number(row.amount_paid),
     apartment: normalizeApartment(row.apartment),
   }
 }

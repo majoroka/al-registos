@@ -15,6 +15,7 @@ type GuestForm = {
   guest_email: string
   guest_address: string
   people_count: string
+  amount_paid: string
   linen: string
   notes: string
   check_in: string
@@ -118,6 +119,7 @@ const emptyForm: GuestForm = {
   guest_email: '',
   guest_address: '',
   people_count: '1',
+  amount_paid: '',
   linen: 'Com Roupa',
   notes: '',
   check_in: '',
@@ -138,6 +140,60 @@ function parsePositiveInteger(value: string): number | null {
   const parsed = Number(trimmed)
   if (!Number.isSafeInteger(parsed) || parsed <= 0) return null
   return parsed
+}
+
+function parseMoneyInput(value: string): number | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+
+  const sanitized = trimmed.replace(/\s|€/g, '')
+  let normalized = sanitized
+
+  if (sanitized.includes(',')) {
+    normalized = sanitized.replace(/\./g, '').replace(',', '.')
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(sanitized)) {
+    normalized = sanitized.replace(/\./g, '')
+  }
+
+  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return null
+
+  const parsed = Number(normalized)
+  if (!Number.isFinite(parsed) || parsed < 0) return null
+
+  return Math.round(parsed * 100) / 100
+}
+
+function formatMoneyForDisplay(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '-'
+
+  return new Intl.NumberFormat('pt-PT', {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value)
+}
+
+function formatMoneyForInput(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return ''
+  return value.toFixed(2).replace('.', ',')
+}
+
+function calculateAmountPerDay(
+  amountPaid: number | null | undefined,
+  nightsCount: number | null | undefined,
+): number | null {
+  if (
+    amountPaid === null ||
+    amountPaid === undefined ||
+    !Number.isFinite(amountPaid) ||
+    !nightsCount ||
+    nightsCount <= 0
+  ) {
+    return null
+  }
+
+  return Math.round((amountPaid / nightsCount) * 100) / 100
 }
 
 function parseYear(value: string): number | null {
@@ -253,6 +309,7 @@ function toGuestForm(stay: StayWithApartment): GuestForm {
     guest_email: stay.guest_email,
     guest_address: stay.guest_address,
     people_count: stay.people_count >= 10 ? '10' : String(stay.people_count),
+    amount_paid: formatMoneyForInput(stay.amount_paid),
     linen: stay.linen === 'Sem Roupa' ? 'Sem Roupa' : 'Com Roupa',
     notes: stay.notes ?? '',
     check_in: stay.check_in ?? '',
@@ -264,6 +321,7 @@ function toDuplicateGuestForm(stay: StayWithApartment): GuestForm {
   const source = toGuestForm(stay)
   return {
     ...source,
+    amount_paid: '',
     check_in: '',
     check_out: '',
   }
@@ -337,6 +395,7 @@ type BackupRow = {
   apartment_name: string
   people_count: number
   nights_count: number
+  amount_paid: number | null
   linen: string
   notes: string
   check_in: string
@@ -373,6 +432,7 @@ function toBackupRows(stays: StayWithApartment[]): BackupRow[] {
     apartment_name: stay.apartment?.name ?? '',
     people_count: stay.people_count,
     nights_count: stay.nights_count,
+    amount_paid: stay.amount_paid ?? null,
     linen: stay.linen ?? '',
     notes: stay.notes ?? '',
     check_in: stay.check_in ?? '',
@@ -382,7 +442,7 @@ function toBackupRows(stays: StayWithApartment[]): BackupRow[] {
   }))
 }
 
-function escapeCsvValue(value: string | number): string {
+function escapeCsvValue(value: string | number | null): string {
   const raw = String(value ?? '')
   if (!/[",\n]/.test(raw)) return raw
   return `"${raw.replace(/"/g, '""')}"`
@@ -399,6 +459,7 @@ function buildBackupCsv(rows: BackupRow[]): string {
     'apartment_name',
     'people_count',
     'nights_count',
+    'amount_paid',
     'linen',
     'notes',
     'check_in',
@@ -593,6 +654,7 @@ function parseBackupCsv(csvText: string): BackupRow[] {
       apartment_name: row.apartment_name || '',
       people_count: Number(row.people_count || 0),
       nights_count: Number(row.nights_count || 0),
+      amount_paid: row.amount_paid === '' || row.amount_paid === undefined ? null : Number(row.amount_paid),
       linen: row.linen || '',
       notes: row.notes || '',
       check_in: row.check_in || '',
@@ -619,6 +681,10 @@ function normalizeBackupRows(rawRows: unknown): BackupRow[] {
       apartment_name: String(safe.apartment_name ?? ''),
       people_count: Number(safe.people_count ?? 0),
       nights_count: Number(safe.nights_count ?? 0),
+      amount_paid:
+        safe.amount_paid === null || safe.amount_paid === undefined || safe.amount_paid === ''
+          ? null
+          : Number(safe.amount_paid),
       linen: String(safe.linen ?? ''),
       notes: String(safe.notes ?? ''),
       check_in: String(safe.check_in ?? ''),
@@ -819,6 +885,7 @@ function validateGuestForm(
   const guestEmail = form.guest_email.trim().toLowerCase()
   const guestAddress = form.guest_address.trim()
   const peopleCount = parsePositiveInteger(form.people_count)
+  const amountPaid = form.amount_paid.trim() ? parseMoneyInput(form.amount_paid) : null
   const checkIn = form.check_in
   const checkOut = form.check_out
   const nightsCount = calculateNights(checkIn, checkOut)
@@ -843,6 +910,10 @@ function validateGuestForm(
 
   if (!peopleCount) {
     return { error: 'Número de pessoas inválido.' }
+  }
+
+  if (form.amount_paid.trim() && amountPaid === null) {
+    return { error: 'Valor pago inválido. Usa um valor numérico, por exemplo 700 ou 700,50.' }
   }
 
   if (!checkIn || !checkOut) {
@@ -870,6 +941,7 @@ function validateGuestForm(
       apartment_id: apartmentId,
       people_count: peopleCount,
       nights_count: nightsCount,
+      amount_paid: amountPaid,
       linen: form.linen,
       rating: null,
       notes: form.notes.trim() || null,
@@ -1207,6 +1279,7 @@ function buildExportDocumentHtml(params: {
   const rowsHtml = orderedStays
     .map((stay, index) => {
       const nights = calculateNights(stay.check_in ?? '', stay.check_out ?? '') ?? stay.nights_count
+      const amountPerDay = calculateAmountPerDay(stay.amount_paid, nights)
       const notes = stay.notes?.trim() ? stay.notes : '-'
       const stayColor = colorByStayId.get(stay.id) ?? getColorForStay(index)
 
@@ -1227,6 +1300,11 @@ function buildExportDocumentHtml(params: {
             <p><strong>Noites:</strong> ${nights}</p>
             <p><strong>Nº de Pessoas:</strong> ${stay.people_count}</p>
             <p><strong>Roupa:</strong> ${escapeHtml(stay.linen ?? '-')}</p>
+          </div>
+          <div class="record-row">
+            <p><strong>Valor pago:</strong> ${escapeHtml(formatMoneyForDisplay(stay.amount_paid))}</p>
+            <p><strong>Valor/dia:</strong> ${escapeHtml(formatMoneyForDisplay(amountPerDay))}</p>
+            <p></p>
           </div>
           <p class="record-notes"><strong>Notas:</strong> ${escapeHtml(notes)}</p>
         </article>
@@ -2086,12 +2164,17 @@ export default function Apartments() {
         const guestAddress = row.guest_address.trim()
         const checkIn = row.check_in.trim()
         const checkOut = row.check_out.trim()
+        const amountPaid =
+          row.amount_paid === null || row.amount_paid === undefined ? null : Number(row.amount_paid)
 
         const fieldErrors: string[] = []
         if (guestName.length < 2) fieldErrors.push('Nome inválido')
         if (guestPhone.length < 6) fieldErrors.push('Telefone inválido')
         if (guestEmail.length < 3) fieldErrors.push('Email inválido')
         if (guestAddress.length < 3) fieldErrors.push('Morada inválida')
+        if (amountPaid !== null && (!Number.isFinite(amountPaid) || amountPaid < 0)) {
+          fieldErrors.push('Valor pago inválido')
+        }
         if (fieldErrors.length > 0) {
           registerInvalid(fieldErrors.join(', ') + '.')
           continue
@@ -2132,6 +2215,7 @@ export default function Apartments() {
           apartment_id: apartmentId,
           people_count: Number.isFinite(row.people_count) && row.people_count > 0 ? row.people_count : 1,
           nights_count: nightsCount,
+          amount_paid: amountPaid,
           linen: row.linen === 'Sem Roupa' ? 'Sem Roupa' : 'Com Roupa',
           rating: null,
           notes: row.notes?.trim() ? row.notes.trim() : null,
@@ -2548,6 +2632,19 @@ export default function Apartments() {
                                                   stay.nights_count}
                                               </p>
                                               <p>
+                                                <span>Valor pago:</span> {formatMoneyForDisplay(stay.amount_paid)}
+                                              </p>
+                                              <p>
+                                                <span>Valor/dia:</span>{' '}
+                                                {formatMoneyForDisplay(
+                                                  calculateAmountPerDay(
+                                                    stay.amount_paid,
+                                                    calculateNights(stay.check_in ?? '', stay.check_out ?? '') ??
+                                                      stay.nights_count,
+                                                  ),
+                                                )}
+                                              </p>
+                                              <p>
                                                 <span>Nº Pessoas:</span> {stay.people_count}
                                               </p>
                                               <p>
@@ -2835,6 +2932,19 @@ export default function Apartments() {
                           stay.nights_count}
                       </p>
                       <p>
+                        <span>Valor pago:</span> {formatMoneyForDisplay(stay.amount_paid)}
+                      </p>
+                      <p>
+                        <span>Valor/dia:</span>{' '}
+                        {formatMoneyForDisplay(
+                          calculateAmountPerDay(
+                            stay.amount_paid,
+                            calculateNights(stay.check_in ?? '', stay.check_out ?? '') ??
+                              stay.nights_count,
+                          ),
+                        )}
+                      </p>
+                      <p>
                         <span>Nº Pessoas:</span> {stay.people_count}
                       </p>
                       <p>
@@ -3039,6 +3149,32 @@ export default function Apartments() {
                 <span>Noites calculadas:</span>
                 <strong>{calculateNights(form.check_in, form.check_out) ?? '-'}</strong>
               </p>
+              <label>
+                Valor pago
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={form.amount_paid}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, amount_paid: event.target.value }))
+                  }
+                  placeholder="0,00"
+                />
+              </label>
+              <label>
+                Valor por dia
+                <input
+                  type="text"
+                  value={formatMoneyForDisplay(
+                    calculateAmountPerDay(
+                      form.amount_paid.trim() ? parseMoneyInput(form.amount_paid) : null,
+                      calculateNights(form.check_in, form.check_out),
+                    ),
+                  )}
+                  readOnly
+                  tabIndex={-1}
+                />
+              </label>
               <label>
                 Nº Pessoas
                 <select

@@ -13,6 +13,7 @@ export type Stay = {
   apartment_id: number
   people_count: number
   nights_count: number
+  amount_paid?: number | null
   linen: string | null
   rating: number | null
   notes: string | null
