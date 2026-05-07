@@ -119,8 +119,8 @@ Aplicação web para registo, consulta e emissão documental de estadias de Aloj
 ## Segurança e persistência
 
 - Migrações em `supabase/migrations`.
-- RLS por `owner_id`.
-- `owner_id` obrigatório em `apartments` e `stays`.
+- RLS ativo, mas com acesso partilhado entre todos os utilizadores `authenticated`.
+- `owner_id` mantém-se no schema como metadado legado/criador, não como critério de acesso.
 - Trigger para sincronização de campos derivados (`nights_count`, `year`) a partir de datas.
 
 ## Riscos atuais

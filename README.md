@@ -2,6 +2,8 @@
 
 Frontend em React + Vite + TypeScript para registo de hóspedes de Alojamento Local, com Supabase (Auth + Postgres + RLS).
 
+Modelo atual de acesso: todos os utilizadores autenticados partilham os mesmos apartamentos e registos.
+
 ## Estado atual
 
 Projeto em fase inicial, mas com fluxo operacional completo para uso diário:
@@ -112,6 +114,7 @@ npm run dev
 - `20260224191500_add_checkin_checkout.sql`
 - `20260224194000_sync_nights_from_dates.sql`
 - `20260224203000_import_clientes_al.sql`
+- `20260507110000_shared_authenticated_access.sql`
 
 ## Documentação
 

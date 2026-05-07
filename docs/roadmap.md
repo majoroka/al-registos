@@ -44,7 +44,7 @@ Consolidar o MVP de registo AL com operação diária estável, segurança consi
 
 ## Fase 3 - Segurança e operação
 
-- [ ] Executar auditoria manual multi-utilizador RLS.
+- [ ] Executar auditoria manual multi-utilizador para confirmar acesso partilhado e permissões.
 - [ ] Definir processo de rotação de credenciais/tokens.
 - [ ] Documentar rotina de backup e recuperação.
 - [ ] Rever permissões e políticas após cada nova migração.
@@ -61,6 +61,6 @@ Consolidar o MVP de registo AL com operação diária estável, segurança consi
 
 - [ ] `npm run typecheck` sem erros.
 - [ ] Migrações aplicadas e verificadas no ambiente alvo.
-- [ ] RLS validado em cenário com dois utilizadores distintos.
+- [ ] Acesso partilhado validado em cenário com dois utilizadores distintos.
 - [ ] Fluxo completo (`Consultar`/`Visualizar`/`Exportar`/`Imprimir`) validado em browser alvo.
 - [ ] Processo operacional documentado (backup, rollback, suporte).
